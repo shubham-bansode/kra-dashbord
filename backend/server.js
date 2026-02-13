@@ -28,6 +28,7 @@ mongoose.connect(process.env.MONGODB_URI)
 const corporationRoutes = require('./routes/corporationRoutes');
 const regionRoutes = require('./routes/regionRoutes');
 const circleRoutes = require('./routes/circleRoutes');
+const divisionRoutes = require('./routes/divisionRoutes');
 const kraRoutes = require('./routes/kraRoutes');
 const kraEntryRoutes = require('./routes/kraEntryRoutes');
 const authRoutes = require('./routes/authRoutes');
@@ -37,6 +38,7 @@ const adminRoutes = require('./routes/adminRoutes');
 app.use('/api/corporations', corporationRoutes);
 app.use('/api/regions', regionRoutes);
 app.use('/api/circles', circleRoutes);
+app.use('/api/divisions', divisionRoutes);
 app.use('/api/kras', kraRoutes);
 app.use('/api/kra-entries', kraEntryRoutes);
 app.use('/api/auth', authRoutes);

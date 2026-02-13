@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { corporationApi } from "../services/api";
 import { useEffect } from "react";
+import { useLanguage } from "../i18n/LanguageContext";
 
 // ============================================================================
 // HELPERS
@@ -25,6 +26,7 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, register, user } = useAuth();
+  const { t } = useLanguage();
 
   // Determine initial tab from URL state or path
   const getInitialTab = () => {
@@ -47,7 +49,7 @@ export default function AuthPage() {
   }, [user, navigate]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-6">
@@ -69,11 +71,9 @@ export default function AuthPage() {
             </div>
           </Link>
           <h1 className="text-2xl font-bold text-gray-800">
-            KRA Monitoring System
+            {t("KRA निरीक्षण प्रणाली", "KRA Monitoring System")}
           </h1>
-          <p className="text-sm text-gray-600">
-            जलसंपदा विभाग, महाराष्ट्र शासन
-          </p>
+          <p className="text-sm text-gray-600">{t()}</p>
         </div>
 
         {/* Auth Card */}
@@ -88,7 +88,7 @@ export default function AuthPage() {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              🔑 User Login
+              🔑 {t("वापरकर्ता लॉगिन", "User Login")}
             </button>
             <button
               onClick={() => setActiveTab("signup")}
@@ -98,7 +98,7 @@ export default function AuthPage() {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              📝 Sign Up
+              📝 {t("खाते तयार करा", "Sign Up")}
             </button>
             <button
               onClick={() => setActiveTab("admin")}
@@ -108,7 +108,7 @@ export default function AuthPage() {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              ⚙️ Admin
+              ⚙️ {t("प्रशासक", "Admin")}
             </button>
           </div>
 
@@ -142,7 +142,7 @@ export default function AuthPage() {
             to="/"
             className="text-sm text-gray-600 hover:text-blue-600 transition-colors"
           >
-            ← मुख्यपृष्ठावर परत | Back to Home
+            ← {t("मुख्यपृष्ठावर परत", "Back to Home")}
           </Link>
         </div>
       </div>
@@ -155,6 +155,7 @@ export default function AuthPage() {
 // ============================================================================
 function LoginForm({ onSuccess }) {
   const { login, logout } = useAuth();
+  const { t } = useLanguage();
   const [mobileNumber, setMobileNumber] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -172,7 +173,12 @@ function LoginForm({ onSuccess }) {
       // Check if user is admin trying to login via user form
       if (user?.role === "admin" || user?.role === "superadmin") {
         logout(); // Logout the admin user
-        setError("Please use Admin Login for admin accounts");
+        setError(
+          t(
+            "प्रशासक खात्यांसाठी कृपया 'Admin Login' वापरा",
+            "Please use Admin Login for admin accounts",
+          ),
+        );
         return;
       }
 
@@ -191,7 +197,7 @@ function LoginForm({ onSuccess }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="login-mobile"
         >
-          मोबाईल क्रमांक | Mobile Number
+          {t("मोबाईल क्रमांक", "Mobile Number")}
         </label>
         <input
           id="login-mobile"
@@ -214,7 +220,7 @@ function LoginForm({ onSuccess }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="login-password"
         >
-          पासवर्ड | Password
+          {t("पासवर्ड", "Password")}
         </label>
         <input
           id="login-password"
@@ -238,7 +244,9 @@ function LoginForm({ onSuccess }) {
         disabled={isSubmitting}
         className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all"
       >
-        {isSubmitting ? "Logging in..." : "Login | लॉगिन"}
+        {isSubmitting
+          ? t("लॉगिन करत आहे...", "Logging in...")
+          : t("लॉगिन", "Login")}
       </button>
     </form>
   );
@@ -249,6 +257,7 @@ function LoginForm({ onSuccess }) {
 // ============================================================================
 function SignupForm({ onSuccess, onSwitchToLogin }) {
   const { register } = useAuth();
+  const { t } = useLanguage();
   const [corporations, setCorporations] = useState([]);
   const [corporation, setCorporation] = useState("");
   const [fullName, setFullName] = useState("");
@@ -294,7 +303,7 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="signup-corp"
         >
-          महामंडळ | Corporation
+          {t("महामंडळ", "Corporation")}
         </label>
         <select
           id="signup-corp"
@@ -304,7 +313,7 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
           disabled={isLoading}
           required
         >
-          <option value="">Select Corporation</option>
+          <option value="">{t("महामंडळ निवडा", "Select Corporation")}</option>
           {corporations.map((c) => (
             <option key={c._id} value={c._id}>
               {c.name}
@@ -318,7 +327,7 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="signup-name"
         >
-          पूर्ण नाव | Full Name
+          {t("पूर्ण नाव", "Full Name")}
         </label>
         <input
           id="signup-name"
@@ -336,7 +345,7 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="signup-mobile"
         >
-          मोबाईल क्रमांक | Mobile Number
+          {t("मोबाईल क्रमांक", "Mobile Number")}
         </label>
         <input
           id="signup-mobile"
@@ -359,7 +368,7 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="signup-password"
         >
-          पासवर्ड | Password
+          {t("पासवर्ड", "Password")}
         </label>
         <input
           id="signup-password"
@@ -385,18 +394,18 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
         className="w-full py-2.5 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold rounded-lg hover:from-green-700 hover:to-green-800 disabled:opacity-50 transition-all"
       >
         {isSubmitting
-          ? "Creating Account..."
-          : "Create Account | खाते तयार करा"}
+          ? t("खाते तयार होत आहे...", "Creating Account...")
+          : t("खाते तयार करा", "Create Account")}
       </button>
 
       <p className="text-center text-sm text-gray-600 mt-4">
-        आधीपासून खाते आहे?{" "}
+        {t("आधीपासून खाते आहे?", "Already have an account?")}{" "}
         <button
           type="button"
           onClick={onSwitchToLogin}
           className="text-blue-600 font-semibold hover:underline"
         >
-          Login
+          {t("लॉगिन", "Login")}
         </button>
       </p>
     </form>
@@ -408,6 +417,7 @@ function SignupForm({ onSuccess, onSwitchToLogin }) {
 // ============================================================================
 function AdminLoginForm({ onSuccess }) {
   const { login, logout } = useAuth();
+  const { t } = useLanguage();
   const [mobileNumber, setMobileNumber] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -425,7 +435,12 @@ function AdminLoginForm({ onSuccess }) {
       // Check if user has admin role
       if (user?.role !== "admin" && user?.role !== "superadmin") {
         logout(); // Logout the non-admin user
-        setError("Access denied. Admin credentials required.");
+        setError(
+          t(
+            "प्रवेश नाकारला. प्रशासक क्रेडेन्शियल आवश्यक.",
+            "Access denied. Admin credentials required.",
+          ),
+        );
         return;
       }
 
@@ -443,8 +458,9 @@ function AdminLoginForm({ onSuccess }) {
         <div className="flex items-center gap-2 text-purple-800">
           <span className="text-xl">🔐</span>
           <div>
-            <p className="font-semibold text-sm">Admin Access Only</p>
-            <p className="text-xs text-purple-600">केवळ प्रशासकांसाठी प्रवेश</p>
+            <p className="font-semibold text-sm">
+              {t("केवळ प्रशासकांसाठी प्रवेश", "Admin Access Only")}
+            </p>
           </div>
         </div>
       </div>
@@ -454,7 +470,7 @@ function AdminLoginForm({ onSuccess }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="admin-mobile"
         >
-          Admin Mobile Number
+          {t("प्रशासक मोबाईल क्रमांक", "Admin Mobile Number")}
         </label>
         <input
           id="admin-mobile"
@@ -477,7 +493,7 @@ function AdminLoginForm({ onSuccess }) {
           className="block text-sm font-medium text-gray-700 mb-1"
           htmlFor="admin-password"
         >
-          Admin Password
+          {t("प्रशासक पासवर्ड", "Admin Password")}
         </label>
         <input
           id="admin-password"
@@ -501,7 +517,9 @@ function AdminLoginForm({ onSuccess }) {
         disabled={isSubmitting}
         className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-purple-800 disabled:opacity-50 transition-all"
       >
-        {isSubmitting ? "Authenticating..." : "Admin Login | प्रशासक लॉगिन"}
+        {isSubmitting
+          ? t("तपासणी होत आहे...", "Authenticating...")
+          : t("प्रशासक लॉगिन", "Admin Login")}
       </button>
     </form>
   );

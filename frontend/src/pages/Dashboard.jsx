@@ -21,6 +21,8 @@ import {
   kraApi,
 } from "../services/api";
 import { generateKraYears } from "../utils/helpers";
+import { useLanguage } from "../i18n/LanguageContext";
+import { localizeName, localizeString } from "../utils/localize";
 
 const COLORS = [
   "#003366",
@@ -56,6 +58,7 @@ const StatCard = ({ title, value, subtitle, icon, color = "bg-gov-blue" }) => (
 );
 
 export default function Dashboard() {
+  const { t, language } = useLanguage();
   const [summary, setSummary] = useState(null);
   const [byCorporation, setByCorporation] = useState([]);
   const [byKra, setByKra] = useState([]);
@@ -175,25 +178,30 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen py-8 px-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">KRA Dashboard</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {t("KRA डॅशबोर्ड", "KRA Dashboard")}
+          </h1>
           <p className="text-gray-600 mt-2">
-            केआरए डॅशबोर्ड - डेटा विश्लेषण आणि अहवाल
+            {t(
+              "केआरए डॅशबोर्ड - डेटा विश्लेषण आणि अहवाल",
+              "KRA dashboard - data analysis and reports",
+            )}
           </p>
         </div>
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
-            Filters | फिल्टर
+            {t("फिल्टर", "Filters")}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Corporation
+                {t("महामंडळ", "Corporation")}
               </label>
               <select
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gov-blue"
@@ -202,10 +210,12 @@ export default function Dashboard() {
                   handleFilterChange("corporation", e.target.value)
                 }
               >
-                <option value="">All Corporations</option>
+                <option value="">
+                  {t("सर्व महामंडळे", "All Corporations")}
+                </option>
                 {corporations.map((corp) => (
                   <option key={corp._id} value={corp._id}>
-                    {corp.name}
+                    {localizeName(corp, language)}
                   </option>
                 ))}
               </select>
@@ -213,14 +223,14 @@ export default function Dashboard() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                KRA Year
+                {t("KRA वर्ष", "KRA Year")}
               </label>
               <select
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gov-blue"
                 value={filters.kraYear}
                 onChange={(e) => handleFilterChange("kraYear", e.target.value)}
               >
-                <option value="">All Years</option>
+                <option value="">{t("सर्व वर्षे", "All Years")}</option>
                 {kraYears.map((year) => (
                   <option key={year} value={year}>
                     {year}
@@ -231,17 +241,17 @@ export default function Dashboard() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                KRA
+                {t("फलनिष्पत्ती", "KRA")}
               </label>
               <select
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gov-blue"
                 value={filters.kra}
                 onChange={(e) => handleFilterChange("kra", e.target.value)}
               >
-                <option value="">All KRAs</option>
+                <option value="">{t("सर्व KRA", "All KRAs")}</option>
                 {kras.map((kra) => (
                   <option key={kra._id} value={kra._id}>
-                    {kra.nameEnglish || kra.name}
+                    {localizeName(kra, language)}
                   </option>
                 ))}
               </select>
@@ -252,7 +262,7 @@ export default function Dashboard() {
                 onClick={resetFilters}
                 className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
               >
-                Reset Filters
+                {t("फिल्टर रीसेट", "Reset Filters")}
               </button>
             </div>
           </div>
@@ -261,9 +271,9 @@ export default function Dashboard() {
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard
-            title="Total Entries"
+            title={t("एकूण नोंदी", "Total Entries")}
             value={summary?.totalEntries || 0}
-            subtitle="एकूण नोंदी"
+            subtitle={""}
             color="#003366"
             icon={
               <svg
@@ -283,9 +293,9 @@ export default function Dashboard() {
           />
 
           <StatCard
-            title="Total Achievement"
+            title={t("एकूण साध्य", "Total Achievement")}
             value={summary?.totalAchievement?.toFixed(2) || 0}
-            subtitle="एकूण साध्य"
+            subtitle={""}
             color="#0066cc"
             icon={
               <svg
@@ -305,9 +315,9 @@ export default function Dashboard() {
           />
 
           <StatCard
-            title="Total Target"
+            title={t("एकूण लक्ष्य", "Total Target")}
             value={summary?.totalTarget?.toFixed(2) || 0}
-            subtitle="एकूण लक्ष्य"
+            subtitle={""}
             color="#3399ff"
             icon={
               <svg
@@ -327,9 +337,9 @@ export default function Dashboard() {
           />
 
           <StatCard
-            title="Achievement %"
+            title={t("साध्य %", "Achievement %")}
             value={`${summary?.achievementPercentage?.toFixed(1) || 0}%`}
-            subtitle="साध्य टक्केवारी"
+            subtitle={""}
             color="#ff6b35"
             icon={
               <svg
@@ -360,7 +370,7 @@ export default function Dashboard() {
           {/* Achievements by Corporation */}
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Achievements by Corporation
+              {t("महामंडळानुसार साध्य", "Achievements by Corporation")}
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={byCorporation}>
@@ -372,9 +382,13 @@ export default function Dashboard() {
                 <Bar
                   dataKey="totalAchievement"
                   fill="#003366"
-                  name="Achievement"
+                  name={t("साध्य", "Achievement")}
                 />
-                <Bar dataKey="totalTarget" fill="#66b3ff" name="Target" />
+                <Bar
+                  dataKey="totalTarget"
+                  fill="#66b3ff"
+                  name={t("लक्ष्य", "Target")}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -382,7 +396,7 @@ export default function Dashboard() {
           {/* Corporation Distribution */}
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Corporation Distribution
+              {t("महामंडळ वितरण", "Corporation Distribution")}
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -414,7 +428,7 @@ export default function Dashboard() {
           {/* Monthly Trend */}
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Monthly Achievement Trend
+              {t("मासिक साध्य कल", "Monthly Achievement Trend")}
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={monthlyTrend}>
@@ -428,14 +442,14 @@ export default function Dashboard() {
                   dataKey="totalAchievement"
                   stroke="#003366"
                   strokeWidth={2}
-                  name="Achievement"
+                  name={t("साध्य", "Achievement")}
                 />
                 <Line
                   type="monotone"
                   dataKey="totalTarget"
                   stroke="#ff6b35"
                   strokeWidth={2}
-                  name="Target"
+                  name={t("लक्ष्य", "Target")}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -444,19 +458,24 @@ export default function Dashboard() {
           {/* Achievements by KRA */}
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Achievements by KRA
+              {t("KRA नुसार साध्य", "Achievements by KRA")}
             </h3>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={byKra} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
-                <YAxis dataKey="kraName" type="category" width={200} />
+                <YAxis
+                  dataKey="kraName"
+                  type="category"
+                  width={200}
+                  tickFormatter={(v) => localizeString(v, language)}
+                />
                 <Tooltip />
                 <Legend />
                 <Bar
                   dataKey="totalAchievement"
                   fill="#003366"
-                  name="Achievement"
+                  name={t("साध्य", "Achievement")}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -466,26 +485,26 @@ export default function Dashboard() {
         {/* Data Table */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-lg font-bold text-gray-900 mb-4">
-            Recent Entries | अलीकडील नोंदी
+            {t("अलीकडील नोंदी", "Recent Entries")}
           </h3>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
+                    {t("तारीख", "Date")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Corporation
+                    {t("महामंडळ", "Corporation")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    KRA
+                    {t("KRA", "KRA")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Target
+                    {t("लक्ष्य", "Target")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Achievement
+                    {t("साध्य", "Achievement")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     %
@@ -508,7 +527,8 @@ export default function Dashboard() {
                         {entry.corporation?.code || "N/A"}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {entry.kraName || `KRA ${entry.kraId}`}
+                        {localizeString(entry.kraName, language) ||
+                          `KRA ${entry.kraId}`}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {target}

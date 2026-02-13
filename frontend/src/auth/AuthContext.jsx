@@ -7,19 +7,41 @@ import React, {
 } from "react";
 import { authApi } from "../services/api";
 
+const safeStorageGet = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return "";
+  }
+};
+
+const safeStorageSet = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+};
+
+const safeStorageRemove = (key) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+};
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(
-    () => localStorage.getItem("authToken") || "",
-  );
+  const [token, setToken] = useState(() => safeStorageGet("authToken") || "");
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(Boolean(token));
 
   const saveAuth = (nextToken, nextUser) => {
     setToken(nextToken);
-    if (nextToken) localStorage.setItem("authToken", nextToken);
-    else localStorage.removeItem("authToken");
+    if (nextToken) safeStorageSet("authToken", nextToken);
+    else safeStorageRemove("authToken");
 
     setUser(nextUser || null);
   };

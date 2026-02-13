@@ -5,8 +5,75 @@ const mongoose = require('mongoose');
 const KraMonthlyEntry = require('../models/KraMonthlyEntry');
 const Corporation = require('../models/Corporation');
 const Kra = require('../models/Kra');
+const Division = require('../models/Division');
+const Circle = require('../models/Circle');
 const auth = require('../middleware/auth');
 const { getAllKras } = require('../config/kraMaster');
+const Region = require('../models/Region');
+const {
+  isAllowedRegionName,
+  isAllowedCircleName
+} = require('../config/googleFormHierarchy');
+
+async function validateHierarchyStrict({ corporationDoc, regionId, circleId, divisionId }) {
+  if (!corporationDoc?.hasRegions) return { ok: true };
+
+  if (!regionId) {
+    return { ok: false, status: 400, message: 'Region is required for this corporation', field: 'region' };
+  }
+  if (!circleId) {
+    return { ok: false, status: 400, message: 'Circle is required for this corporation', field: 'circle' };
+  }
+  if (!divisionId) {
+    return { ok: false, status: 400, message: 'Division is required for this corporation', field: 'division' };
+  }
+
+  const regionDoc = await Region.findOne({
+    _id: regionId,
+    corporation: corporationDoc._id,
+    isActive: true
+  })
+    .select('_id name corporation')
+    .lean();
+
+  if (!regionDoc) {
+    return { ok: false, status: 400, message: 'Invalid region selected', field: 'region' };
+  }
+  if (!isAllowedRegionName(corporationDoc.name, regionDoc.name)) {
+    return { ok: false, status: 400, message: 'Region must match Google Form exactly', field: 'region' };
+  }
+
+  const circleDoc = await Circle.findOne({
+    _id: circleId,
+    corporation: corporationDoc._id,
+    region: regionDoc._id,
+    isActive: true
+  })
+    .select('_id name region corporation')
+    .lean();
+
+  if (!circleDoc) {
+    return { ok: false, status: 400, message: 'Invalid circle selected', field: 'circle' };
+  }
+  if (!isAllowedCircleName(corporationDoc.name, regionDoc.name, circleDoc.name)) {
+    return { ok: false, status: 400, message: 'Circle must match Google Form exactly', field: 'circle' };
+  }
+
+  const divisionDoc = await Division.findOne({ _id: divisionId, isActive: true }).select('_id circle').lean();
+  if (!divisionDoc) {
+    return { ok: false, status: 400, message: 'Invalid division selected', field: 'division' };
+  }
+  if (String(divisionDoc.circle) !== String(circleDoc._id)) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'Division does not belong to selected circle',
+      field: 'division'
+    };
+  }
+
+  return { ok: true };
+}
 
 function parseKraYear(kraYear) {
   if (!kraYear) return null;
@@ -25,6 +92,21 @@ const validateSubmission = [
   body('corporation')
     .notEmpty().withMessage('Corporation is required')
     .isMongoId().withMessage('Invalid Corporation ID'),
+
+  body('region')
+    .optional({ nullable: true })
+    .custom((v) => v === null || mongoose.isValidObjectId(v))
+    .withMessage('Invalid Region ID'),
+
+  body('circle')
+    .optional({ nullable: true })
+    .custom((v) => v === null || mongoose.isValidObjectId(v))
+    .withMessage('Invalid Circle ID'),
+
+  body('division')
+    .optional({ nullable: true })
+    .custom((v) => v === null || mongoose.isValidObjectId(v))
+    .withMessage('Invalid Division ID'),
 
   body('kraYear')
     .notEmpty().withMessage('KRA Year is required')
@@ -93,6 +175,7 @@ router.get('/', async (req, res) => {
     if (req.query.corporation) filter.corporation = req.query.corporation;
     if (req.query.region) filter.region = req.query.region;
     if (req.query.circle) filter.circle = req.query.circle;
+    if (req.query.division) filter.division = req.query.division;
     const kraParam = req.query.kraId || req.query.kra;
     if (kraParam) {
       let kraId = parseInt(kraParam, 10);
@@ -112,6 +195,7 @@ router.get('/', async (req, res) => {
       .populate('corporation', 'name code')
       .populate('region', 'name code')
       .populate('circle', 'name code')
+      .populate('division', 'name code')
       .sort({ createdAt: -1 });
     
     res.json({
@@ -164,7 +248,8 @@ router.get('/:id', async (req, res) => {
     const entry = await KraMonthlyEntry.findById(req.params.id)
       .populate('corporation', 'name code')
       .populate('region', 'name code')
-      .populate('circle', 'name code');
+      .populate('circle', 'name code')
+      .populate('division', 'name code');
     
     if (!entry) {
       return res.status(404).json({
@@ -212,24 +297,22 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
     }
     
     // If corporation has regions, region and circle are required
-    const region = corporation.hasRegions ? req.body.region : null;
-    const circle = corporation.hasRegions ? req.body.circle : null;
+    let region = corporation.hasRegions ? req.body.region : null;
+    let circle = corporation.hasRegions ? req.body.circle : null;
+    const division = corporation.hasRegions ? req.body.division : null;
 
-    if (corporation.hasRegions) {
-      if (!region) {
-        return res.status(400).json({
-          success: false,
-          message: 'Region is required for this corporation',
-          errors: [{ field: 'region', message: 'Region is required' }]
-        });
-      }
-      if (!circle) {
-        return res.status(400).json({
-          success: false,
-          message: 'Circle is required for this corporation',
-          errors: [{ field: 'circle', message: 'Circle is required' }]
-        });
-      }
+    const hierarchy = await validateHierarchyStrict({
+      corporationDoc: corporation,
+      regionId: region,
+      circleId: circle,
+      divisionId: division
+    });
+    if (!hierarchy.ok) {
+      return res.status(hierarchy.status || 400).json({
+        success: false,
+        message: hierarchy.message,
+        errors: hierarchy.field ? [{ field: hierarchy.field, message: hierarchy.message }] : undefined
+      });
     }
 
     // Build a full 7-KRA payload (all zeros by default)
@@ -259,6 +342,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
       corporation: req.body.corporation,
       region,
       circle,
+      division,
       achievementDate: req.body.achievementDate
     });
     if (duplicate) {
@@ -274,6 +358,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
       corporation: req.body.corporation,
       region,
       circle,
+      division,
       kraYear: req.body.kraYear,
       achievementDate: req.body.achievementDate,
       kras,
@@ -290,7 +375,8 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
     const populatedEntry = await KraMonthlyEntry.findById(entry._id)
       .populate('corporation', 'name code')
       .populate('region', 'name code')
-      .populate('circle', 'name code');
+      .populate('circle', 'name code')
+      .populate('division', 'name code');
     
     res.status(201).json({
       success: true,
@@ -359,10 +445,34 @@ router.put('/:id', auth, validateSubmission, validateDateYearMatch, async (req, 
       .filter((k) => (k.annualTarget || 0) > 0 || (k.kraAchievement || 0) > 0)
       .map((k) => k.kraId);
 
+    // MKVDC Pune-only: resolve short-form aliases to canonical IDs for updates too
+    let updateRegion = req.body.region || null;
+    let updateCircle = req.body.circle || null;
+    const updateCorporation = req.body.corporation
+      ? await Corporation.findById(req.body.corporation).select('_id name hasRegions')
+      : null;
+
+    if (updateCorporation?.hasRegions) {
+      const hierarchy = await validateHierarchyStrict({
+        corporationDoc: updateCorporation,
+        regionId: updateRegion,
+        circleId: updateCircle,
+        divisionId: req.body.division || null
+      });
+      if (!hierarchy.ok) {
+        return res.status(hierarchy.status || 400).json({
+          success: false,
+          message: hierarchy.message,
+          errors: hierarchy.field ? [{ field: hierarchy.field, message: hierarchy.message }] : undefined
+        });
+      }
+    }
+
     const updatePayload = {
       corporation: req.body.corporation,
-      region: req.body.region || null,
-      circle: req.body.circle || null,
+      region: updateRegion,
+      circle: updateCircle,
+      division: req.body.division || null,
       kraYear: req.body.kraYear,
       achievementDate: req.body.achievementDate,
       kras,
@@ -379,7 +489,8 @@ router.put('/:id', auth, validateSubmission, validateDateYearMatch, async (req, 
     )
       .populate('corporation', 'name code')
       .populate('region', 'name code')
-      .populate('circle', 'name code');
+      .populate('circle', 'name code')
+      .populate('division', 'name code');
     
     res.json({
       success: true,
@@ -485,7 +596,8 @@ router.post('/bulk', auth, async (req, res) => {
       String(e.achievementDate) === String(base.achievementDate) &&
       String(e.contactNumber) === String(base.contactNumber) &&
       String(e.region || '') === String(base.region || '') &&
-      String(e.circle || '') === String(base.circle || '')
+      String(e.circle || '') === String(base.circle || '') &&
+      String(e.division || '') === String(base.division || '')
     );
 
     if (!sameContext) {
@@ -507,24 +619,22 @@ router.post('/bulk', auth, async (req, res) => {
     }
 
     // Validate corporation-specific requirements
-    const region = corporation.hasRegions ? entries[0].region : null;
-    const circle = corporation.hasRegions ? entries[0].circle : null;
+    let region = corporation.hasRegions ? entries[0].region : null;
+    let circle = corporation.hasRegions ? entries[0].circle : null;
+    const division = corporation.hasRegions ? entries[0].division : null;
 
-    if (corporation.hasRegions) {
-      if (!region) {
-        return res.status(400).json({
-          success: false,
-          message: 'Region is required for this corporation',
-          errors: [{ field: 'region', message: 'Region is required' }]
-        });
-      }
-      if (!circle) {
-        return res.status(400).json({
-          success: false,
-          message: 'Circle is required for this corporation',
-          errors: [{ field: 'circle', message: 'Circle is required' }]
-        });
-      }
+    const hierarchy = await validateHierarchyStrict({
+      corporationDoc: corporation,
+      regionId: region,
+      circleId: circle,
+      divisionId: division
+    });
+    if (!hierarchy.ok) {
+      return res.status(hierarchy.status || 400).json({
+        success: false,
+        message: hierarchy.message,
+        errors: hierarchy.field ? [{ field: hierarchy.field, message: hierarchy.message }] : undefined
+      });
     }
 
     const kraYear = entries[0].kraYear;
@@ -538,6 +648,7 @@ router.post('/bulk', auth, async (req, res) => {
       corporation: corporationId,
       region,
       circle,
+      division,
       achievementDate
     });
     if (duplicate) {
@@ -574,6 +685,7 @@ router.post('/bulk', auth, async (req, res) => {
       corporation: corporationId,
       region,
       circle,
+      division,
       kraYear,
       achievementDate,
       kras,

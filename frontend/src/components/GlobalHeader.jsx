@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { useLanguage } from "../i18n/LanguageContext";
 
 const GlobalHeader = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { token, user, logout } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -42,11 +44,11 @@ const GlobalHeader = () => {
   };
 
   const navItems = [
-    { path: "/", label: "Home", labelMr: "मुख्यपृष्ठ" },
-    { path: "/data-entry", label: "Data Entry", labelMr: "डेटा एंट्री" },
-    { path: "/dashboard", label: "Dashboard", labelMr: "डॅशबोर्ड" },
-    { path: "/reports", label: "Reports", labelMr: "रिपोर्ट" },
-    { path: "/monitoring", label: "Monitoring", labelMr: "निरीक्षण" },
+    { path: "/", label: { en: "Home", mr: "मुख्यपृष्ठ" } },
+    { path: "/data-entry", label: { en: "Data Entry", mr: "डेटा एंट्री" } },
+    { path: "/dashboard", label: { en: "Dashboard", mr: "डॅशबोर्ड" } },
+    { path: "/reports", label: { en: "Reports", mr: "रिपोर्ट" } },
+    { path: "/monitoring", label: { en: "Monitoring", mr: "निरीक्षण" } },
   ];
 
   return (
@@ -87,9 +89,18 @@ const GlobalHeader = () => {
                       : "text-blue-100 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  {item.label}
+                  {t(item.label.mr, item.label.en)}
                 </button>
               ))}
+
+              {/* Language Toggle */}
+              <button
+                type="button"
+                onClick={() => setLanguage(language === "en" ? "mr" : "en")}
+                className="ml-2 px-3 py-1.5 text-sm font-medium rounded transition-all text-blue-100 hover:bg-white/10 hover:text-white w-20 text-center"
+              >
+                {language === "en" ? "EN" : "मराठी"}
+              </button>
             </div>
 
             {/* Right: Auth Section */}
@@ -190,7 +201,7 @@ const GlobalHeader = () => {
                       d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
                     />
                   </svg>
-                  Sign In
+                  {t("साइन इन", "Sign In")}
                 </button>
               )}
 
@@ -230,6 +241,15 @@ const GlobalHeader = () => {
         {mobileMenuOpen && (
           <div className="lg:hidden border-t border-white/10 bg-blue-900/95 backdrop-blur">
             <div className="px-4 py-2 space-y-1">
+              {/* Language Toggle */}
+              <button
+                type="button"
+                onClick={() => setLanguage(language === "en" ? "mr" : "en")}
+                className="w-20 text-center px-3 py-2.5 text-sm font-medium rounded transition-all text-blue-100 hover:bg-white/10 mx-auto"
+              >
+                {language === "en" ? "EN" : "मराठी"}
+              </button>
+
               {navItems.map((item) => (
                 <button
                   key={item.path}
@@ -240,10 +260,7 @@ const GlobalHeader = () => {
                       : "text-blue-100 hover:bg-white/10"
                   }`}
                 >
-                  {item.label}{" "}
-                  <span className="text-blue-300 text-xs ml-1">
-                    {item.labelMr}
-                  </span>
+                  {t(item.label.mr, item.label.en)}
                 </button>
               ))}
             </div>

@@ -1,16 +1,17 @@
-import { useNavigate } from "react-router-dom";
+﻿import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { useLanguage } from "../i18n/LanguageContext";
 
 const HomePage = () => {
   const navigate = useNavigate();
   const { token } = useAuth();
   const [hoveredCard, setHoveredCard] = useState(null);
+  const { language, t } = useLanguage();
 
   const handleCardClick = (path) => {
-    // If not logged in and trying to access protected routes, redirect to login
     if (!token && (path === "/data-entry" || path === "/dashboard")) {
-      navigate("/login");
+      navigate("/auth");
     } else {
       navigate(path);
     }
@@ -41,7 +42,7 @@ const HomePage = () => {
       id: 3,
       title: "प्रकल्प निरीक्षण",
       titleEn: "Project Monitoring",
-      description: "सर्कल-वार केआरए निरीक्षण डॅशबोर्ड",
+      description: "सर्कल नुसार केआरए निरीक्षण डॅशबोर्ड",
       descriptionEn: "Circle-wise KRA Monitoring Dashboard",
       icon: "🌊",
       path: "/monitoring",
@@ -60,67 +61,137 @@ const HomePage = () => {
   ];
 
   return (
-    <div className="min-h-[calc(100vh-250px)] bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        {/* Hero Section */}
-        <div className="text-center mb-12 animate-fade-in">
-          <h1 className="text-3xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-600 mb-3">
-            Circle-wise KRA Monitoring Dashboard
-          </h1>
+    <div className="min-h-[calc(100vh-250px)]">
+      <section className="relative overflow-hidden">
+        <div className="relative max-w-7xl mx-auto px-4 py-12 md:py-20">
+          <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-12">
+            <img
+              src="/images/महाराष्ट्र शासन.png"
+              alt="Maharashtra Government"
+              className="h-20 md:h-24 object-contain"
+            />
+            <div className="text-center md:text-left">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
+                {t("जलसंपदा विभाग", "Water Resources Department")}
+              </h2>
+              <p className="text-lg text-gray-600 mt-1">
+                {t("महाराष्ट्र शासन", "Government of Maharashtra")}
+              </p>
+            </div>
+            <img
+              src="/images/जलसंपदा विभाग.png"
+              alt="Water Resources Department"
+              className="h-20 md:h-24 object-contain"
+            />
+          </div>
 
-          <p className="text-lg md:text-xl text-gray-700 font-semibold mb-2">
-            सर्कल-वार केआरए निरीक्षण डॅशबोर्ड
-          </p>
+          <div className="text-center max-w-4xl mx-auto mb-12">
+            <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
+              {t(
+                "सर्कल नुसार केआरए निरीक्षण डॅशबोर्ड",
+                "Circle-wise KRA Monitoring Dashboard",
+              )}
+            </h1>
+            <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
+              {t(
+                "Key Result Areas (KRA) कार्यप्रदर्शन निरीक्षण आणि डेटा व्यवस्थापन प्रणाली",
+                "Key Result Areas (KRA) Performance Monitoring & Data Management System",
+              )}
+            </p>
+          </div>
 
-          <p className="text-base text-gray-600 max-w-3xl mx-auto">
-            Key Result Areas (KRA) Performance Monitoring & Data Management
-            System
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+            <button
+              type="button"
+              onClick={() => handleCardClick(token ? "/dashboard" : "/auth")}
+              className="px-8 py-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg shadow-lg transition-all transform hover:scale-105"
+            >
+              {token
+                ? t("डॅशबोर्ड उघडा →", "Open Dashboard →")
+                : t("लॉगिन करा →", "Login →")}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCardClick("/monitoring")}
+              className="px-8 py-4 rounded-lg bg-white hover:bg-gray-50 text-blue-600 font-semibold text-lg border-2 border-blue-600 transition-all transform hover:scale-105"
+            >
+              {t("निरीक्षण पहा →", "View Monitoring →")}
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="text-center">
+                <div className="text-4xl font-bold text-blue-600 mb-2">5</div>
+                <p className="text-sm font-semibold text-gray-700">
+                  {t("जल महामंडळे", "Water Corporations")}
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-green-600 mb-2">7</div>
+                <p className="text-sm font-semibold text-gray-700">
+                  {t("KRA प्रकार", "KRA Types")}
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-cyan-600 mb-2">
+                  100+
+                </div>
+                <p className="text-sm font-semibold text-gray-700">
+                  {t("सर्कल", "Circles")}
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-orange-600 mb-2">
+                  24/7
+                </div>
+                <p className="text-sm font-semibold text-gray-700">
+                  {t("उपलब्ध", "Available")}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="max-w-7xl mx-auto px-4 py-12">
+        <div className="text-center mb-10">
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">
+            {t("सिस्टम वैशिष्ट्ये", "System Features")}
+          </h2>
+          <p className="text-gray-600">
+            {t(
+              "सर्व KRA संबंधित कार्ये एका ठिकाणी",
+              "All KRA-related functions in one place",
+            )}
           </p>
         </div>
 
-        {/* Feature Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((feature) => (
             <div
               key={feature.id}
               onMouseEnter={() => setHoveredCard(feature.id)}
               onMouseLeave={() => setHoveredCard(null)}
               onClick={() => handleCardClick(feature.path)}
-              className={`
-                relative bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer
-                transform transition-all duration-300 hover:scale-105 hover:shadow-2xl
-                ${hoveredCard === feature.id ? "ring-4 ring-blue-500 ring-opacity-50" : ""}
-              `}
+              className={`bg-white rounded-xl shadow-md overflow-hidden cursor-pointer transition-all duration-300 border-2 ${hoveredCard === feature.id ? "border-blue-500 shadow-xl transform scale-105" : "border-transparent hover:border-blue-200"}`}
             >
-              {/* Gradient Background */}
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${feature.color} opacity-0 transition-opacity duration-300 ${hoveredCard === feature.id ? "opacity-10" : ""}`}
-              />
-
-              {/* Content */}
-              <div className="relative p-5 text-center">
-                <div className="text-5xl mb-3 transform transition-transform duration-300 hover:scale-110">
+              <div className={`h-2 bg-gradient-to-r ${feature.color}`} />
+              <div className="p-6">
+                <div className="text-5xl mb-4 text-center transform transition-transform duration-300 hover:scale-110">
                   {feature.icon}
                 </div>
-
-                <h3 className="text-lg font-bold text-gray-800 mb-1">
-                  {feature.title}
+                <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
+                  {t(feature.title, feature.titleEn)}
                 </h3>
-                <p className="text-sm font-medium text-gray-600 mb-2">
-                  {feature.titleEn}
+                <p className="text-sm text-gray-600 text-center mb-4">
+                  {t(feature.description, feature.descriptionEn)}
                 </p>
-
-                <p className="text-sm text-gray-600 mb-1">
-                  {feature.description}
-                </p>
-                <p className="text-xs text-gray-500">{feature.descriptionEn}</p>
-
-                <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="text-center pt-3 border-t border-gray-100">
                   <span
                     className={`inline-flex items-center text-sm font-semibold bg-gradient-to-r ${feature.color} text-transparent bg-clip-text`}
                   >
-                    उघडा / Open
+                    {t("उघडा", "Open")}
                     <svg
                       className="w-4 h-4 ml-2"
                       fill="none"
@@ -137,85 +208,132 @@ const HomePage = () => {
                   </span>
                 </div>
               </div>
-
-              {/* Hover Effect Border */}
-              <div
-                className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${feature.color} transform transition-transform duration-300 ${hoveredCard === feature.id ? "scale-x-100" : "scale-x-0"}`}
-              />
             </div>
           ))}
         </div>
+      </section>
 
-        {/* Quick Stats Section */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
-          <h2 className="text-xl font-bold text-center text-gray-800 mb-6">
-            सिस्टम वैशिष्ट्ये | System Features
-          </h2>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl">
-              <div className="text-3xl font-bold text-blue-600 mb-1">5</div>
-              <p className="text-sm font-semibold text-gray-700">महामंडळे</p>
-              <p className="text-xs text-gray-600">Corporations</p>
+      <section className="max-w-7xl mx-auto px-4 py-12">
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-6 text-white">
+            <h2 className="text-2xl font-bold mb-2">
+              {t("महत्वाच्या सूचना", "Important Instructions")}
+            </h2>
+            <p className="text-blue-100">
+              {t(
+                "डेटा एंट्री आणि पडताळणीसाठी कृपया खालील मुद्दे लक्षात घ्या",
+                "Please note the following points for data entry and validation",
+              )}
+            </p>
+          </div>
+          <div className="p-6 md:p-8">
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">📅</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-2">
+                    {t("वेळेवर सबमिट करा", "Submit on Time")}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {t(
+                      "मासिक डेटा एंट्री प्रत्येक महिन्याच्या 5 तारखेपूर्वी पूर्ण करा",
+                      "Complete monthly data entry before 5th of every month",
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">✓</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-2">
+                    {t("अचूक डेटा", "Accurate Data")}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {t(
+                      "सर्व आवश्यक फील्ड योग्यरित्या भरा आणि पडताळा",
+                      "Fill all mandatory fields correctly and validate",
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">💬</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-2">
+                    {t("सहाय्य उपलब्ध", "Support Available")}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {t(
+                      "समस्या असल्यास आपल्या प्रशासकाशी संपर्क करा",
+                      "Contact your administrator if you face any issues",
+                    )}
+                  </p>
+                </div>
+              </div>
             </div>
-
-            <div className="text-center p-3 bg-gradient-to-br from-green-50 to-green-100 rounded-xl">
-              <div className="text-3xl font-bold text-green-600 mb-1">7</div>
-              <p className="text-sm font-semibold text-gray-700">KRA प्रकार</p>
-              <p className="text-xs text-gray-600">KRA Types</p>
-            </div>
-
-            <div className="text-center p-3 bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-xl">
-              <div className="text-3xl font-bold text-cyan-600 mb-1">24/7</div>
-              <p className="text-sm font-semibold text-gray-700">उपलब्धता</p>
-              <p className="text-xs text-gray-600">Availability</p>
-            </div>
-
-            <div className="text-center p-3 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl">
-              <div className="text-3xl font-bold text-orange-600 mb-1">✓</div>
-              <p className="text-sm font-semibold text-gray-700">सुरक्षित</p>
-              <p className="text-xs text-gray-600">Secure</p>
+            <div className="mt-8 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <p className="text-sm text-gray-600">
+                {t(
+                  "अधिक माहितीसाठी रिपोर्ट्स आणि निरीक्षण विभाग पहा",
+                  "View Reports and Monitoring section for more information",
+                )}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleCardClick("/reports")}
+                  className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"
+                >
+                  {t("रिपोर्ट →", "Reports →")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCardClick("/monitoring")}
+                  className="px-5 py-2.5 rounded-lg bg-white hover:bg-gray-50 text-blue-600 font-semibold text-sm border-2 border-blue-600 transition"
+                >
+                  {t("निरीक्षण →", "Monitoring →")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Important Links */}
-        <div className="bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl shadow-xl p-6 text-white text-center">
-          <h2 className="text-xl font-bold mb-3">
-            महत्वाच्या सूचना | Important Instructions
-          </h2>
-          <div className="max-w-3xl mx-auto space-y-1 text-sm">
-            <p>
-              • मासिक डेटा एंट्री प्रत्येक महिन्याच्या 5 तारखेपूर्वी पूर्ण करा
+      <footer className="bg-gray-900 text-white py-10">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="text-center pb-6 border-b border-gray-700">
+            <p className="text-lg font-bold mb-2">
+              {t(
+                "जलसंपदा विभाग, महाराष्ट्र शासन",
+                "Water Resources Department, Government of Maharashtra",
+              )}
             </p>
-            <p>• Complete monthly data entry before 5th of every month</p>
-            <p>
-              • सर्व आवश्यक फील्ड योग्यरित्या भरा | Fill all mandatory fields
-              correctly
-            </p>
-            <p>• समस्या असल्यास संपर्क करा: 1800-XXX-XXXX</p>
-          </div>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="bg-gray-800 text-white py-6 mt-10">
-        <div className="container mx-auto px-4 text-center">
-          <div className="mb-3">
-            <p className="text-base font-semibold mb-1">
-              जलसंपदा विभाग, महाराष्ट्र शासन
-            </p>
-            <p className="text-sm">
-              Water Resources Department, Government of Maharashtra
-            </p>
-          </div>
-
-          <div className="border-t border-gray-700 pt-3">
             <p className="text-sm text-gray-400">
-              © {new Date().getFullYear()} All Rights Reserved | सर्व हक्क राखीव
+              {t(
+                "Key Result Areas (KRA) कार्यप्रदर्शन निरीक्षण प्रणाली",
+                "Key Result Areas (KRA) Performance Monitoring System",
+              )}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Designed & Developed for Water Resources Department
+          </div>
+          <div className="pt-6 text-center">
+            <p className="text-sm text-gray-400">
+              © {new Date().getFullYear()}{" "}
+              {t(
+                "जलसंपदा विभाग, महाराष्ट्र शासन. सर्व हक्क राखीव.",
+                "Water Resources Department, Government of Maharashtra. All Rights Reserved.",
+              )}
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              {t(
+                "जलसंपदा विभागासाठी डिझाइन आणि विकसित",
+                "Designed & Developed for Water Resources Department",
+              )}
             </p>
           </div>
         </div>

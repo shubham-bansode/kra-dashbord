@@ -3,6 +3,7 @@ import {
   corporationApi,
   regionApi,
   circleApi,
+  divisionApi,
   kraEntryApi,
   financialYearApi,
 } from "../services/api";
@@ -14,6 +15,8 @@ import {
   parseFinancialYear,
 } from "../utils/helpers";
 import { useAuth } from "../auth/AuthContext";
+import { useLanguage } from "../i18n/LanguageContext";
+import { localizeName } from "../utils/localize";
 
 // Import KRA configuration from centralized config file
 import { getActiveKraConfig, getKrasForConfig } from "../config/kraConfig";
@@ -138,6 +141,7 @@ const SectionIcon = ({ children }) => (
 // ============================================================================
 const KRAForm = () => {
   const { user } = useAuth();
+  const { language, t, tp } = useLanguage();
   const userCorporationId = user?.corporation?._id || user?.corporation || "";
   const userMobileNumber = user?.mobileNumber || "";
   const userFullName = user?.fullName || "";
@@ -147,6 +151,7 @@ const KRAForm = () => {
   const [corporations, setCorporations] = useState([]);
   const [regions, setRegions] = useState([]);
   const [circles, setCircles] = useState([]);
+  const [divisions, setDivisions] = useState([]);
   const [kraYears] = useState(generateKraYears());
   const [months] = useState(getMarathiMonths());
   const [activeFinancialYear, setActiveFinancialYear] = useState(null);
@@ -157,6 +162,7 @@ const KRAForm = () => {
     corporation: "",
     region: "",
     circle: "",
+    division: "",
     kraYear: "",
     kraMonth: "",
     achievementDate: "",
@@ -176,11 +182,13 @@ const KRAForm = () => {
   const [submitStatus, setSubmitStatus] = useState({ type: "", message: "" });
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successSummary, setSuccessSummary] = useState("");
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedCorporation, setSelectedCorporation] = useState(null);
   const [selectedRegion, setSelectedRegion] = useState(null);
 
   // KRA selection flow - show all 7 KRAs at once
   const [selectedKraIds, setSelectedKraIds] = useState([]);
+  const [numberOfKras, setNumberOfKras] = useState(""); // Number of KRAs to select
 
   // Get active KRA configuration based on selection
   const activeConfig = useMemo(() => {
@@ -264,6 +272,7 @@ const KRAForm = () => {
         next.corporation = userCorporationId;
         next.region = "";
         next.circle = "";
+        next.division = "";
       }
       if (userMobileNumber && !prev.contactNumber) {
         next.contactNumber = userMobileNumber;
@@ -278,6 +287,7 @@ const KRAForm = () => {
       if (!formData.corporation) {
         setRegions([]);
         setCircles([]);
+        setDivisions([]);
         setSelectedCorporation(null);
         return;
       }
@@ -296,6 +306,7 @@ const KRAForm = () => {
         setRegions([]);
       }
       setCircles([]);
+      setDivisions([]);
       setSelectedRegion(null);
     };
 
@@ -307,6 +318,7 @@ const KRAForm = () => {
     const fetchCircles = async () => {
       if (!formData.region) {
         setCircles([]);
+        setDivisions([]);
         setSelectedRegion(null);
         return;
       }
@@ -320,10 +332,33 @@ const KRAForm = () => {
       } catch (error) {
         console.error("Error fetching circles:", error);
       }
+
+      // Circle changed via region flow; reset divisions
+      setDivisions([]);
     };
 
     fetchCircles();
   }, [formData.region, regions]);
+
+  // Fetch divisions when circle changes
+  useEffect(() => {
+    const fetchDivisions = async () => {
+      if (!formData.circle) {
+        setDivisions([]);
+        return;
+      }
+
+      try {
+        const res = await divisionApi.getByCircle(formData.circle);
+        setDivisions(res.data.data);
+      } catch (error) {
+        console.error("Error fetching divisions:", error);
+        setDivisions([]);
+      }
+    };
+
+    fetchDivisions();
+  }, [formData.circle]);
 
   // Reset KRA table data when config changes
   useEffect(() => {
@@ -356,47 +391,63 @@ const KRAForm = () => {
       switch (name) {
         case "corporation":
           if (!value)
-            error = "महामंडळ निवडणे आवश्यक आहे | Corporation is required";
+            error = tp("महामंडळ निवडणे आवश्यक आहे | Corporation is required");
           break;
 
         case "region":
           if (selectedCorporation?.hasRegions && !value) {
-            error = "प्रादेशिक नाव निवडणे आवश्यक आहे | Region is required";
+            error = tp("प्रदेशाचे नाव निवडणे आवश्यक आहे | Region is required");
           }
           break;
 
         case "circle":
           if (selectedCorporation?.hasRegions && !value) {
-            error = "वर्तुळ नाव निवडणे आवश्यक आहे | Circle is required";
+            error = tp("मंडळाचे नाव निवडणे आवश्यक आहे | Circle is required");
+          }
+          break;
+
+        case "division":
+          if (selectedCorporation?.hasRegions && !value) {
+            error = tp("विभागाचे नाव निवडणे आवश्यक आहे | Division is required");
           }
           break;
 
         case "kraYear":
           if (!value)
-            error = "KRA वर्ष निवडणे आवश्यक आहे | KRA Year is required";
+            error = tp("KRA वर्ष निवडणे आवश्यक आहे | KRA Year is required");
           break;
 
         case "kraMonth":
-          if (!value) error = "महिना निवडणे आवश्यक आहे | Month is required";
+          if (!value) error = tp("महिना निवडणे आवश्यक आहे | Month is required");
           break;
 
         case "achievementDate":
           if (!value) {
-            error = "उपलब्धी तारीख आवश्यक आहे | Achievement Date is required";
+            error = tp(
+              "उपलब्धी तारीख आवश्यक आहे | Achievement Date is required",
+            );
           } else if (
             formData.kraYear &&
             !isDateInFinancialYear(value, formData.kraYear)
           ) {
             const fyInfo = parseFinancialYear(formData.kraYear);
-            error = `तारीख आर्थिक वर्ष ${formData.kraYear} मध्ये असणे आवश्यक आहे (एप्रिल ${fyInfo.startYear} ते मार्च ${fyInfo.endYear})`;
+            error = t(
+              `तारीख वर्ष ${formData.kraYear} मध्ये असणे आवश्यक आहे (जून ${fyInfo.startYear} ते मे ${fyInfo.endYear})`,
+              `Date must be within ${formData.kraYear} (Jun ${fyInfo.startYear} to May ${fyInfo.endYear})`,
+            );
           }
           break;
 
         case "contactNumber":
           if (!value) {
-            error = "संपर्क क्रमांक आवश्यक आहे | Contact Number is required";
+            error = tp(
+              "संपर्क क्रमांक आवश्यक आहे | Contact Number is required",
+            );
           } else if (!isValidMobileNumber(value)) {
-            error = "कृपया वैध 10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा";
+            error = t(
+              "कृपया वैध 10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा",
+              "Please enter a valid 10-digit Indian mobile number",
+            );
           }
           break;
 
@@ -413,15 +464,24 @@ const KRAForm = () => {
   const validateKraTable = useCallback(() => {
     const errors = {};
 
+    if (!formData.kraMonth) {
+      errors.kraSelection = tp(
+        "कृपया प्रथम महिना निवडा | Please select month first",
+      );
+      return errors;
+    }
+
     if (!formData.achievementDate) {
-      errors.kraSelection =
-        "कृपया प्रथम तारीख निवडा | Please select date first";
+      errors.kraSelection = tp(
+        "कृपया प्रथम महिना निवडा | Please select month first",
+      );
       return errors;
     }
 
     if (selectedKraIds.length === 0) {
-      errors.selectedKras =
-        "कृपया किमान एक KRA निवडा | Please select at least one KRA";
+      errors.selectedKras = tp(
+        "कृपया किमान एक KRA निवडा | Please select at least one KRA",
+      );
       return errors;
     }
 
@@ -429,22 +489,35 @@ const KRAForm = () => {
     selectedDisplayKras.forEach((kra) => {
       const data = kraTableData[kra.id];
       if (!data?.target) {
-        errors[`kra_${kra.id}_target`] = "वार्षिक उद्दिष्ट आवश्यक आहे";
+        errors[`kra_${kra.id}_target`] = t(
+          "वार्षिक उद्दिष्ट आवश्यक आहे",
+          "Annual target is required",
+        );
       }
       if (!data?.achievement) {
-        errors[`kra_${kra.id}_achievement`] = "साध्य आवश्यक आहे";
+        errors[`kra_${kra.id}_achievement`] = t(
+          "साध्य आवश्यक आहे",
+          "Achievement is required",
+        );
       }
       if (data?.target && parseFloat(data.target) < 0) {
-        errors[`kra_${kra.id}_target`] = "मूल्य नकारात्मक असू शकत नाही";
+        errors[`kra_${kra.id}_target`] = t(
+          "मूल्य नकारात्मक असू शकत नाही",
+          "Value cannot be negative",
+        );
       }
       if (data?.achievement && parseFloat(data.achievement) < 0) {
-        errors[`kra_${kra.id}_achievement`] = "मूल्य नकारात्मक असू शकत नाही";
+        errors[`kra_${kra.id}_achievement`] = t(
+          "मूल्य नकारात्मक असू शकत नाही",
+          "Value cannot be negative",
+        );
       }
     });
 
     return errors;
   }, [
     formData.achievementDate,
+    formData.kraMonth,
     selectedKraIds,
     selectedDisplayKras,
     kraTableData,
@@ -470,9 +543,52 @@ const KRAForm = () => {
     setSelectedKraIds((prev) => {
       const exists = prev.includes(kraId);
       if (exists) return prev.filter((id) => id !== kraId);
+
+      // Check if we've reached the limit set by numberOfKras
+      const limit = parseInt(numberOfKras, 10);
+      if (limit && prev.length >= limit) {
+        // Already at limit, don't add more
+        return prev;
+      }
       return [...prev, kraId];
     });
   };
+
+  const getMonthEndDateString = useCallback((monthValue, kraYear) => {
+    const monthNumber = Number(monthValue);
+    if (!monthNumber || monthNumber < 1 || monthNumber > 12) return "";
+
+    const fyInfo = parseFinancialYear(kraYear);
+    if (!fyInfo) return "";
+
+    // Education year: Jun-Dec -> startYear, Jan-May -> endYear
+    const year = monthNumber >= 6 ? fyInfo.startYear : fyInfo.endYear;
+
+    // JS Date months are 0-based; using (year, monthNumber, 0) gives last day of the target month.
+    const lastDay = new Date(year, monthNumber, 0);
+    const yyyy = lastDay.getFullYear();
+    const mm = String(lastDay.getMonth() + 1).padStart(2, "0");
+    const dd = String(lastDay.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  // If year changes while month is selected, keep the month-end date in sync.
+  useEffect(() => {
+    if (!formData.kraMonth) return;
+
+    const autoDate = getMonthEndDateString(formData.kraMonth, formData.kraYear);
+    if (!autoDate) return;
+
+    if (autoDate !== formData.achievementDate) {
+      setFormData((prev) => ({ ...prev, achievementDate: autoDate }));
+      setSelectedKraIds([]);
+    }
+  }, [
+    formData.kraMonth,
+    formData.kraYear,
+    formData.achievementDate,
+    getMonthEndDateString,
+  ]);
 
   // Handle input change
   const handleChange = (e) => {
@@ -483,20 +599,30 @@ const KRAForm = () => {
     if (name === "corporation") {
       updatedFormData.region = "";
       updatedFormData.circle = "";
+      updatedFormData.division = "";
       setSelectedKraIds([]);
     } else if (name === "region") {
       updatedFormData.circle = "";
+      updatedFormData.division = "";
       setSelectedKraIds([]);
-    } else if (name === "achievementDate" && value) {
-      // Auto-fill month based on selected date
-      const selectedDate = new Date(value);
-      const month = selectedDate.getMonth() + 1; // getMonth() returns 0-11, so add 1
-      updatedFormData.kraMonth = month.toString();
+    } else if (name === "circle") {
+      updatedFormData.division = "";
+      setSelectedKraIds([]);
+    } else if (name === "kraMonth") {
+      // Auto-fill date (month-end) based on selected month
+      if (value) {
+        updatedFormData.achievementDate = getMonthEndDateString(
+          value,
+          updatedFormData.kraYear,
+        );
+      } else {
+        updatedFormData.achievementDate = "";
+      }
 
-      // Reset selection when date changes
+      // Reset selection when month changes
       setSelectedKraIds([]);
-    } else if (name === "achievementDate" && !value) {
-      // Reset selection when date cleared
+    } else if (name === "achievementDate") {
+      // If date is manually changed/cleared, reset KRA selection.
       setSelectedKraIds([]);
     }
 
@@ -507,12 +633,11 @@ const KRAForm = () => {
       setErrors((prev) => ({ ...prev, [name]: error }));
     }
 
-    // Also validate and clear error for auto-filled month
-    if (name === "achievementDate" && value && touched.kraMonth) {
-      const selectedDate = new Date(value);
-      const month = selectedDate.getMonth() + 1;
-      const monthError = validateField("kraMonth", month.toString());
-      setErrors((prev) => ({ ...prev, kraMonth: monthError }));
+    // Also validate and clear error for auto-filled date
+    if (name === "kraMonth" && value && touched.achievementDate) {
+      const autoDate = getMonthEndDateString(value, updatedFormData.kraYear);
+      const dateError = validateField("achievementDate", autoDate);
+      setErrors((prev) => ({ ...prev, achievementDate: dateError }));
     }
   };
 
@@ -535,7 +660,7 @@ const KRAForm = () => {
     ];
 
     if (selectedCorporation?.hasRegions) {
-      requiredFields.push("region", "circle");
+      requiredFields.push("region", "circle", "division");
     }
 
     for (const field of requiredFields) {
@@ -562,35 +687,31 @@ const KRAForm = () => {
     kraTableData,
   ]);
 
-  // Handle form submission
+  // Handle form submission - Step 1: Validate and show confirmation
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     // Prevent double-click / double-submit before React disables the button.
     if (submitInFlightRef.current) return;
-    submitInFlightRef.current = true;
-    const releaseSubmitGuard = () => {
-      submitInFlightRef.current = false;
-    };
 
     // Check if year is locked
     if (isYearLocked) {
-      releaseSubmitGuard();
       setSubmitStatus({
         type: "error",
-        message:
-          "हे आर्थिक वर्ष लॉक केले आहे. नवीन नोंदी स्वीकारल्या जात नाहीत. | This financial year is locked. No new entries allowed.",
+        message: tp(
+          "हे शैक्षणिक वर्ष लॉक केले आहे. नवीन नोंदी स्वीकारल्या जात नाहीत. | This academic year is locked. No new entries allowed.",
+        ),
       });
       return;
     }
 
-    // Check if there's an active financial year
+    // Check if there's an active academic year
     if (!activeFinancialYear) {
-      releaseSubmitGuard();
       setSubmitStatus({
         type: "error",
-        message:
-          "कोणतेही सक्रिय आर्थिक वर्ष नाही. कृपया प्रशासकाशी संपर्क साधा. | No active financial year. Please contact administrator.",
+        message: tp(
+          "कोणतेही सक्रिय शैक्षणिक वर्ष नाही. कृपया प्रशासकाशी संपर्क साधा. | No active academic year. Please contact administrator.",
+        ),
       });
       return;
     }
@@ -602,14 +723,23 @@ const KRAForm = () => {
     setTouched(allTouched);
 
     if (!validateForm()) {
-      releaseSubmitGuard();
       setSubmitStatus({
         type: "error",
-        message: "कृपया सर्व आवश्यक फील्ड योग्यरित्या भरा",
+        message: t(
+          "कृपया सर्व आवश्यक फील्ड योग्यरित्या भरा",
+          "Please fill all required fields correctly",
+        ),
       });
       return;
     }
 
+    // Show confirmation modal instead of submitting directly
+    setShowConfirmModal(true);
+  };
+
+  // Handle form submission - Step 2: Perform actual submission after confirmation
+  const performSubmission = async () => {
+    submitInFlightRef.current = true;
     setIsSubmitting(true);
     setSubmitStatus({ type: "", message: "" });
 
@@ -629,6 +759,7 @@ const KRAForm = () => {
           corporation: userCorporationId || formData.corporation,
           region: selectedCorporation?.hasRegions ? formData.region : null,
           circle: selectedCorporation?.hasRegions ? formData.circle : null,
+          division: selectedCorporation?.hasRegions ? formData.division : null,
           kraYear: formData.kraYear,
           kraName: kra.displayName,
           kraId: kra.id,
@@ -648,7 +779,11 @@ const KRAForm = () => {
       const result = response.data;
 
       if (result.success) {
-        const successMsg = `${result.summary.inserted} KRA entries यशस्वीरित्या सबमिट केल्या!`;
+        const insertedCount = Number(result?.summary?.inserted ?? 0);
+        const successMsg = t(
+          `${insertedCount} KRA नोंदी यशस्वीरित्या सबमिट केल्या!`,
+          `${insertedCount} KRA entries submitted successfully!`,
+        );
         setSuccessSummary(successMsg);
         setShowSuccessModal(true);
         setSubmitStatus({
@@ -663,11 +798,14 @@ const KRAForm = () => {
         });
         setKraTableData(resetTableData);
         setSelectedKraIds([]);
+        setNumberOfKras("");
       } else {
         // Handle failure
         setSubmitStatus({
           type: "error",
-          message: result.message || "काही entries साठी त्रुटी आली",
+          message:
+            result.message ||
+            t("काही नोंदींसाठी त्रुटी आली", "Some entries failed"),
         });
       }
     } catch (error) {
@@ -678,8 +816,10 @@ const KRAForm = () => {
       if (statusCode === 404) {
         setSubmitStatus({
           type: "error",
-          message:
-            "Route not found. कृपया API URL सेटिंग तपासा किंवा प्रशासकाशी संपर्क साधा.",
+          message: t(
+            "Route सापडला नाही. कृपया API URL सेटिंग तपासा किंवा प्रशासकाशी संपर्क साधा.",
+            "Route not found. Please verify the API URL setting or contact the administrator.",
+          ),
         });
         return;
       }
@@ -692,8 +832,9 @@ const KRAForm = () => {
       ) {
         setSubmitStatus({
           type: "error",
-          message:
+          message: tp(
             "⚠️ या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. एकदा सबमिट केल्यानंतर फक्त Admin बदल करू शकतात. | A KRA entry already exists for the selected month. Once submitted, only admin can update entries.",
+          ),
         });
         return;
       }
@@ -704,7 +845,10 @@ const KRAForm = () => {
           type: "error",
           message:
             errorData?.message ||
-            "या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. फक्त Admin अपडेट करू शकतात.",
+            t(
+              "या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. फक्त Admin अपडेट करू शकतात.",
+              "A KRA entry already exists for this month. Only admin can update entries.",
+            ),
         });
         return;
       }
@@ -712,7 +856,7 @@ const KRAForm = () => {
       const errorMessage =
         errorData?.errors?.[0]?.message ||
         errorData?.message ||
-        "सबमिट करताना त्रुटी आली";
+        t("सबमिट करताना त्रुटी आली", "Error submitting entries");
       setSubmitStatus({
         type: "error",
         message: errorMessage,
@@ -737,6 +881,7 @@ const KRAForm = () => {
     });
     setKraTableData({});
     setSelectedKraIds([]);
+    setNumberOfKras("");
     setTouched({});
     setErrors({});
     setSubmitStatus({ type: "", message: "" });
@@ -750,9 +895,8 @@ const KRAForm = () => {
             <LoadingSpinner size="h-12 w-12" />
           </div>
           <p className="text-lg text-gray-600 font-medium">
-            डेटा लोड होत आहे...
+            {t("डेटा लोड होत आहे...", "Loading data...")}
           </p>
-          <p className="text-sm text-gray-400 mt-1">Loading data...</p>
         </div>
       </div>
     );
@@ -760,31 +904,187 @@ const KRAForm = () => {
 
   // Success popup modal for clear confirmation
   const SuccessModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-        <div className="flex items-center gap-3 mb-3 text-green-600">
-          <SuccessIcon />
-          <h3 className="text-xl font-bold">Submission Successful</h3>
-        </div>
-        <p className="text-gray-700 mb-6">
-          {successSummary || "Entries submitted successfully."}
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      onClick={() => setShowSuccessModal(false)}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-xl font-bold">
+          {t("सबमिशन यशस्वी", "Submission Successful")}
+        </h3>
+        <p className="mt-2 text-gray-700">
+          {successSummary ||
+            t(
+              "नोंदी यशस्वीरित्या सबमिट झाल्या.",
+              "Entries submitted successfully.",
+            )}
         </p>
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end mt-5">
           <button
             type="button"
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
             onClick={() => setShowSuccessModal(false)}
+            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
-            ठीक आहे / Done
+            {t("ठीक आहे", "Done")}
           </button>
         </div>
       </div>
     </div>
   );
 
+  // Confirmation modal to review data before submission
+  const ConfirmationModal = () => {
+    const selectedKras = displayKras.filter((kra) =>
+      selectedKraIds.includes(kra.id),
+    );
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="bg-gov-blue text-white p-4 rounded-t-lg sticky top-0">
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              <InfoIcon />
+              {t(
+                "सबमिट करण्यापूर्वी कृपया डेटा तपासा",
+                "Please Review Data Before Submission",
+              )}
+            </h3>
+          </div>
+
+          {/* Content */}
+          <div className="p-6">
+            {/* Warning message */}
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+              <p className="text-yellow-800 font-medium">
+                ⚠️
+                {t(
+                  "सबमिट केल्यानंतर बदल करता येणार नाही. फक्त Admin बदल करू शकतात.",
+                  "Once submitted, you cannot edit. Only Admin can make changes.",
+                )}
+              </p>
+            </div>
+
+            {/* KRA Data Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse border border-gray-300">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-300 px-4 py-2 text-left">
+                      {t("अ.क्र.", "Sr.")}
+                    </th>
+                    <th className="border border-gray-300 px-4 py-2 text-left">
+                      {t("KRA नाव", "KRA Name")}
+                    </th>
+                    <th className="border border-gray-300 px-4 py-2 text-center bg-blue-50">
+                      {t("वार्षिक उद्दिष्ट", "Annual Target")}
+                    </th>
+                    <th className="border border-gray-300 px-4 py-2 text-center bg-green-50">
+                      {t("साध्य", "Achievement")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedKras.map((kra, index) => {
+                    const data = kraTableData[kra.id];
+                    return (
+                      <tr
+                        key={kra.id}
+                        className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                      >
+                        <td className="border border-gray-300 px-4 py-2 text-center font-medium">
+                          {kra.id}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-2">
+                          <div className="font-medium text-gray-900">
+                            {language === "mr"
+                              ? kra.displayName
+                              : kra.displayNameEn || kra.displayName}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {t("एकक", "Unit")}:{" "}
+                            {language === "mr"
+                              ? kra.unit
+                              : kra.unitEn || kra.unit}
+                          </div>
+                        </td>
+                        <td className="border border-gray-300 px-4 py-2 text-center bg-blue-50">
+                          <span className="font-bold text-blue-700 text-lg">
+                            {data?.target || "0"}
+                          </span>
+                        </td>
+                        <td className="border border-gray-300 px-4 py-2 text-center bg-green-50">
+                          <span className="font-bold text-green-700 text-lg">
+                            {data?.achievement || "0"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Summary */}
+            <div className="mt-4 p-4 bg-gray-100 rounded-lg">
+              <p className="text-sm text-gray-600">
+                <strong>{t("महामंडळ", "Corporation")}:</strong>{" "}
+                {localizeName(selectedCorporation, language) || "-"}
+              </p>
+              <p className="text-sm text-gray-600">
+                <strong>{t("वर्ष", "Year")}:</strong> {formData.kraYear || "-"}
+              </p>
+              <p className="text-sm text-gray-600">
+                <strong>{t("तारीख", "Date")}:</strong>{" "}
+                {formData.achievementDate || "-"}
+              </p>
+              <p className="text-sm text-gray-600">
+                <strong>{t("निवडलेले KRA", "Selected KRAs")}:</strong>{" "}
+                {selectedKraIds.length}
+              </p>
+            </div>
+          </div>
+
+          {/* Footer with buttons */}
+          <div className="flex justify-end gap-3 p-4 bg-gray-50 rounded-b-lg border-t sticky bottom-0">
+            <button
+              type="button"
+              onClick={() => setShowConfirmModal(false)}
+              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              ❌ {t("रद्द करा", "Cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowConfirmModal(false);
+                performSubmission();
+              }}
+              disabled={isSubmitting}
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <LoadingSpinner size="h-4 w-4" />
+                  {t("सबमिट होत आहे...", "Submitting...")}
+                </>
+              ) : (
+                `✅ ${t("होय, सबमिट करा", "Yes, Submit")}`
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 py-8 px-4">
+    <div className="min-h-screen py-8 px-4">
       {showSuccessModal && <SuccessModal />}
+      {showConfirmModal && <ConfirmationModal />}
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-gov-blue text-white text-center py-6 rounded-t-lg border-b-4 border-gov-orange">
@@ -799,13 +1099,19 @@ const KRAForm = () => {
             />
           </div>
           <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2">
-            KRA Monitoring Data Entry Form
+            {t(
+              "केआरए निरीक्षण डेटा एंट्री फॉर्म",
+              "KRA Monitoring Data Entry Form",
+            )}
           </h1>
           <p className="text-lg md:text-xl opacity-90 font-semibold">
-            केआरए निरीक्षण डेटा एंट्री फॉर्म (Table Mode)
+            {t("(टेबल मोड)", "(Table Mode)")}
           </p>
           <p className="text-sm md:text-base mt-2 opacity-80">
-            जलसंपदा विभाग, महाराष्ट्र शासन
+            {t(
+              "जलसंपदा विभाग, महाराष्ट्र शासन",
+              "Water Resources Department, Government of Maharashtra",
+            )}
           </p>
         </div>
 
@@ -816,17 +1122,18 @@ const KRAForm = () => {
               <span className="text-3xl">🔒</span>
               <div>
                 <h3 className="font-bold text-lg">
-                  आर्थिक वर्ष लॉक केले आहे | Financial Year is Locked
+                  {t("आर्थिक वर्ष लॉक केले आहे", "Financial Year is Locked")}
                 </h3>
                 <p className="text-sm mt-1">
                   {activeFinancialYear
-                    ? `${activeFinancialYear.year} या वर्षासाठी नवीन नोंदी स्वीकारल्या जात नाहीत.`
-                    : "कोणतेही सक्रिय आर्थिक वर्ष नाही. कृपया प्रशासकाशी संपर्क साधा."}
-                </p>
-                <p className="text-xs mt-1 opacity-80">
-                  {activeFinancialYear
-                    ? `No new entries are being accepted for ${activeFinancialYear.year}.`
-                    : "No active financial year. Please contact administrator."}
+                    ? t(
+                        `${activeFinancialYear.year} या वर्षासाठी नवीन नोंदी स्वीकारल्या जात नाहीत.`,
+                        `No new entries are being accepted for ${activeFinancialYear.year}.`,
+                      )
+                    : t(
+                        "कोणतेही सक्रिय आर्थिक वर्ष नाही. कृपया प्रशासकाशी संपर्क साधा.",
+                        "No active financial year. Please contact administrator.",
+                      )}
                 </p>
               </div>
             </div>
@@ -840,11 +1147,16 @@ const KRAForm = () => {
               <span className="text-3xl">⚠️</span>
               <div>
                 <h3 className="font-bold text-lg">
-                  कोणतेही सक्रिय आर्थिक वर्ष नाही | No Active Financial Year
+                  {t(
+                    "कोणतेही सक्रिय आर्थिक वर्ष नाही",
+                    "No Active Financial Year",
+                  )}
                 </h3>
-                <p className="text-sm mt-1">कृपया प्रशासकाशी संपर्क साधा.</p>
-                <p className="text-xs mt-1 opacity-80">
-                  Please contact the administrator to activate a financial year.
+                <p className="text-sm mt-1">
+                  {t(
+                    "कृपया प्रशासकाशी संपर्क साधा.",
+                    "Please contact the administrator to activate a financial year.",
+                  )}
                 </p>
               </div>
             </div>
@@ -861,7 +1173,7 @@ const KRAForm = () => {
               <SectionIcon>
                 <OrgIcon />
               </SectionIcon>
-              संस्थात्मक पदानुक्रम | Organization Hierarchy
+              {t("संस्थात्मक पदानुक्रम", "Organization Hierarchy")}
             </div>
             <div className="section-content">
               <div className="sticky top-0 z-30 -mx-6 md:-mx-8 px-6 md:px-8 py-5 bg-white/95 backdrop-blur border-b border-gray-200">
@@ -869,7 +1181,7 @@ const KRAForm = () => {
                   {/* Corporation */}
                   <div>
                     <label htmlFor="corporation" className="form-label">
-                      महामंडळाचे नाव | Corporation Name
+                      {t("महामंडळाचे नाव", "Corporation Name")}
                       <span className="required-star">*</span>
                     </label>
                     <select
@@ -881,10 +1193,12 @@ const KRAForm = () => {
                       className={`form-select ${errors.corporation && touched.corporation ? "input-error" : ""}`}
                       disabled={isCorporationLocked}
                     >
-                      <option value="">-- निवडा --</option>
+                      <option value="">
+                        {t("-- निवडा --", "-- Select --")}
+                      </option>
                       {corporations.map((corp) => (
                         <option key={corp._id} value={corp._id}>
-                          {corp.name}
+                          {localizeName(corp, language) || corp.name}
                         </option>
                       ))}
                     </select>
@@ -896,66 +1210,139 @@ const KRAForm = () => {
                   </div>
 
                   {/* Region */}
-                  {selectedCorporation?.hasRegions && (
-                    <div>
-                      <label htmlFor="region" className="form-label">
-                        मंडळाचे नाव | Region Name
+                  <div>
+                    <label htmlFor="region" className="form-label">
+                      {t("प्रदेशाचे नाव", "Region Name")}
+                      {selectedCorporation?.hasRegions && (
                         <span className="required-star">*</span>
-                      </label>
-                      <select
-                        id="region"
-                        name="region"
-                        value={formData.region}
-                        onChange={handleChange}
-                        onBlur={handleBlur}
-                        className={`form-select ${errors.region && touched.region ? "input-error" : ""}`}
-                        disabled={!formData.corporation}
-                      >
-                        <option value="">-- निवडा --</option>
-                        {regions.map((region) => (
-                          <option key={region._id} value={region._id}>
-                            {region.name}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.region && touched.region && (
-                        <p className="form-error">
-                          <ErrorIcon /> {errors.region}
-                        </p>
                       )}
-                    </div>
-                  )}
+                    </label>
+                    <select
+                      id="region"
+                      name="region"
+                      value={formData.region}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`form-select ${errors.region && touched.region ? "input-error" : ""} ${!formData.corporation || !selectedCorporation?.hasRegions ? "bg-slate-100 cursor-not-allowed" : ""}`}
+                      disabled={
+                        !formData.corporation ||
+                        !selectedCorporation?.hasRegions
+                      }
+                    >
+                      <option value="">
+                        {t("-- निवडा --", "-- Select --")}
+                      </option>
+                      {regions.map((region) => (
+                        <option key={region._id} value={region._id}>
+                          {localizeName(region, language) || region.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!formData.corporation && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        {t(
+                          "कृपया प्रथम महामंडळ निवडा",
+                          "Please select Corporation first",
+                        )}
+                      </p>
+                    )}
+                    {errors.region && touched.region && (
+                      <p className="form-error">
+                        <ErrorIcon /> {errors.region}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Circle */}
-                  {selectedCorporation?.hasRegions && (
-                    <div>
-                      <label htmlFor="circle" className="form-label">
-                        वर्तुळ नाव | Circle Name
+                  <div>
+                    <label htmlFor="circle" className="form-label">
+                      {t("मंडळाचे नाव", "Circle Name")}
+                      {selectedCorporation?.hasRegions && (
                         <span className="required-star">*</span>
-                      </label>
-                      <select
-                        id="circle"
-                        name="circle"
-                        value={formData.circle}
-                        onChange={handleChange}
-                        onBlur={handleBlur}
-                        className={`form-select ${errors.circle && touched.circle ? "input-error" : ""}`}
-                        disabled={!formData.region}
-                      >
-                        <option value="">-- निवडा --</option>
-                        {circles.map((circle) => (
-                          <option key={circle._id} value={circle._id}>
-                            {circle.name}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.circle && touched.circle && (
-                        <p className="form-error">
-                          <ErrorIcon /> {errors.circle}
+                      )}
+                    </label>
+                    <select
+                      id="circle"
+                      name="circle"
+                      value={formData.circle}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`form-select ${errors.circle && touched.circle ? "input-error" : ""} ${!formData.region || !selectedCorporation?.hasRegions ? "bg-slate-100 cursor-not-allowed" : ""}`}
+                      disabled={
+                        !formData.region || !selectedCorporation?.hasRegions
+                      }
+                    >
+                      <option value="">
+                        {t("-- निवडा --", "-- Select --")}
+                      </option>
+                      {circles.map((circle) => (
+                        <option key={circle._id} value={circle._id}>
+                          {localizeName(circle, language) || circle.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!formData.region &&
+                      formData.corporation &&
+                      selectedCorporation?.hasRegions && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          {t(
+                            "कृपया प्रथम प्रदेश निवडा",
+                            "Please select Region first",
+                          )}
                         </p>
                       )}
-                    </div>
-                  )}
+                    {errors.circle && touched.circle && (
+                      <p className="form-error">
+                        <ErrorIcon /> {errors.circle}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Division */}
+                  <div>
+                    <label htmlFor="division" className="form-label">
+                      {t("विभागाचे नाव", "Division Name")}
+                      {selectedCorporation?.hasRegions && (
+                        <span className="required-star">*</span>
+                      )}
+                    </label>
+                    <select
+                      id="division"
+                      name="division"
+                      value={formData.division}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`form-select ${errors.division && touched.division ? "input-error" : ""} ${!formData.circle || !selectedCorporation?.hasRegions ? "bg-slate-100 cursor-not-allowed" : ""}`}
+                      disabled={
+                        !formData.circle || !selectedCorporation?.hasRegions
+                      }
+                    >
+                      <option value="">
+                        {t("-- निवडा --", "-- Select --")}
+                      </option>
+                      {divisions.map((division) => (
+                        <option key={division._id} value={division._id}>
+                          {division.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!formData.circle &&
+                      formData.region &&
+                      formData.corporation &&
+                      selectedCorporation?.hasRegions && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          {t(
+                            "कृपया प्रथम मंडळ निवडा",
+                            "Please select Circle first",
+                          )}
+                        </p>
+                      )}
+                    {errors.division && touched.division && (
+                      <p className="form-error">
+                        <ErrorIcon /> {errors.division}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -963,11 +1350,11 @@ const KRAForm = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                 <div>
                   <label htmlFor="kraYear" className="form-label">
-                    फलनिष्पत्तीची क्षेत्रे (KRA) वर्ष
+                    {t("KRA वर्ष", "KRA Year")}
                     <span className="required-star">*</span>
                     {activeFinancialYear && (
                       <span className="ml-2 text-xs font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                        🔒 System Controlled
+                        🔒 {t("सिस्टम नियंत्रित", "System Controlled")}
                       </span>
                     )}
                   </label>
@@ -983,8 +1370,10 @@ const KRAForm = () => {
                       />
                       <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                         <InfoIcon />
-                        आर्थिक वर्ष प्रशासकाद्वारे नियंत्रित | Year controlled
-                        by admin
+                        {t(
+                          "आर्थिक वर्ष प्रशासकाद्वारे नियंत्रित",
+                          "Year controlled by admin",
+                        )}
                       </p>
                     </>
                   ) : (
@@ -996,7 +1385,9 @@ const KRAForm = () => {
                       onBlur={handleBlur}
                       className={`form-select ${errors.kraYear && touched.kraYear ? "input-error" : ""}`}
                     >
-                      <option value="">-- निवडा --</option>
+                      <option value="">
+                        {t("-- निवडा --", "-- Select --")}
+                      </option>
                       {kraYears.map((year) => (
                         <option key={year} value={year}>
                           {year}
@@ -1012,32 +1403,14 @@ const KRAForm = () => {
                 </div>
 
                 <div>
-                  <label htmlFor="achievementDate" className="form-label">
-                    उपलब्धी तारीख | Achievement Date
-                    <span className="required-star">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    id="achievementDate"
-                    name="achievementDate"
-                    value={formData.achievementDate}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`form-input ${errors.achievementDate && touched.achievementDate ? "input-error" : ""}`}
-                  />
-                  {errors.achievementDate && touched.achievementDate && (
-                    <p className="form-error">
-                      <ErrorIcon /> {errors.achievementDate}
-                    </p>
-                  )}
-                </div>
-
-                <div>
                   <label htmlFor="kraMonth" className="form-label">
-                    महिन्याचे साध्य KRA
+                    {t("KRA महिना", "KRA Month")}
                     <span className="required-star">*</span>
                     <span className="text-xs text-blue-600 ml-2 font-normal">
-                      (तारीखेवरून स्वयंचलित)
+                      {t(
+                        "(महिना निवडल्यानंतर तारीख स्वयंचलित)",
+                        "(Date auto-filled after month)",
+                      )}
                     </span>
                   </label>
                   <select
@@ -1046,20 +1419,28 @@ const KRAForm = () => {
                     value={formData.kraMonth}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    disabled={true}
-                    className={`form-select bg-gray-100 cursor-not-allowed ${errors.kraMonth && touched.kraMonth ? "input-error" : ""}`}
-                    title="महिना तारीखेवरून स्वयंचलितपणे निवडला जातो"
+                    className={`form-select ${errors.kraMonth && touched.kraMonth ? "input-error" : ""}`}
+                    title={t(
+                      "महिना निवडल्यानंतर त्या महिन्याची शेवटची तारीख आपोआप निवडली जाईल",
+                      "After selecting month, the last date of that month will be auto selected",
+                    )}
                   >
-                    <option value="">-- तारीख निवडा --</option>
+                    <option value="">
+                      {t("-- महिना निवडा --", "-- Select Month --")}
+                    </option>
                     {months.map((month) => (
                       <option key={month.value} value={month.value}>
-                        {month.label} ({month.labelEn})
+                        {language === "mr" ? month.label : month.labelEn}
                       </option>
                     ))}
                   </select>
-                  {!formData.achievementDate && (
+                  {!formData.kraMonth && (
                     <p className="text-xs text-blue-500 mt-1 flex items-center gap-1">
-                      <InfoIcon /> तारीख निवडल्यानंतर महिना आपोआप निवडला जाईल
+                      <InfoIcon />
+                      {t(
+                        "महिना निवडा; त्या महिन्याची शेवटची तारीख आपोआप भरेल",
+                        "Select a month; the last date will be auto-filled",
+                      )}
                     </p>
                   )}
                   {errors.kraMonth && touched.kraMonth && (
@@ -1068,23 +1449,119 @@ const KRAForm = () => {
                     </p>
                   )}
                 </div>
+
+                <div>
+                  <label htmlFor="achievementDate" className="form-label">
+                    {t("उपलब्धी तारीख", "Achievement Date")}
+                    <span className="required-star">*</span>
+                    <span className="text-xs text-blue-600 ml-2 font-normal">
+                      {t("(महिन्याच्या शेवटची तारीख)", "(Month-end date)")}
+                    </span>
+                  </label>
+                  <input
+                    type="date"
+                    id="achievementDate"
+                    name="achievementDate"
+                    value={formData.achievementDate}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    disabled={true}
+                    className={`form-input bg-gray-100 cursor-not-allowed ${errors.achievementDate && touched.achievementDate ? "input-error" : ""}`}
+                    title={t(
+                      "तारीख महिन्याच्या शेवटच्या दिवशी स्वयंचलितपणे सेट होते",
+                      "Date is auto-set to the last day of the month",
+                    )}
+                  />
+                  {errors.achievementDate && touched.achievementDate && (
+                    <p className="form-error">
+                      <ErrorIcon /> {errors.achievementDate}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Instructions for KRA Selection */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
                 <p className="text-sm text-blue-800 font-medium mb-2">
-                  📝 सूचना | Instruction:
+                  📝 {t("सूचना", "Instruction")}
                 </p>
                 <p className="text-sm text-blue-700">
-                  खाली सर्व KRA दिसतील. ज्या KRA साठी डेटा भरायचा आहे त्या KRA
-                  च्या चेकबॉक्सवर क्लिक करा आणि वार्षिक उद्दिष्ट व साध्य भरा.
-                  <br />
-                  <span className="text-xs mt-1 inline-block">
-                    All KRAs are shown below. Click the checkbox for KRAs you
-                    want to fill data for, then enter annual target and
-                    achievement.
-                  </span>
+                  {t(
+                    "खाली सर्व KRA दिसतील. ज्या KRA साठी डेटा भरायचा आहे त्या KRA च्या चेकबॉक्सवर क्लिक करा आणि वार्षिक उद्दिष्ट व साध्य भरा.",
+                    "All KRAs are shown below. Click the checkbox for KRAs you want to fill data for, then enter annual target and achievement.",
+                  )}
                 </p>
+
+                {/* Number of KRAs selector */}
+                <div className="mt-4 pt-4 border-t border-blue-200">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <label className="text-sm font-semibold text-blue-800">
+                      {t("KRA संख्या निवडा", "Select Number of KRAs")}
+                    </label>
+                    <select
+                      value={numberOfKras}
+                      onChange={(e) => {
+                        const num = parseInt(e.target.value, 10);
+                        setNumberOfKras(e.target.value);
+
+                        if (e.target.value === "") {
+                          // Clear selection if "Select" is chosen
+                          setSelectedKraIds([]);
+                        } else if (num === displayKras.length) {
+                          // Auto-select all KRAs only when selecting max (e.g., 7)
+                          const kraIdsToSelect = displayKras.map((k) => k.id);
+                          setSelectedKraIds(kraIdsToSelect);
+                        } else {
+                          // For other numbers, trim selection if it exceeds the new limit
+                          setSelectedKraIds((prev) => prev.slice(0, num));
+                        }
+                      }}
+                      disabled={
+                        !formData.achievementDate || displayKras.length === 0
+                      }
+                      className="px-4 py-2 border border-blue-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    >
+                      <option value="">-- निवडा --</option>
+                      {[...Array(displayKras.length)].map((_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {i + 1} KRA{i + 1 > 1 ? "s" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {numberOfKras && (
+                      <span
+                        className={`text-sm font-medium ${selectedKraIds.length === parseInt(numberOfKras, 10) ? "text-green-700" : "text-orange-600"}`}
+                      >
+                        {selectedKraIds.length === parseInt(numberOfKras, 10)
+                          ? "✅"
+                          : "⏳"}{" "}
+                        {selectedKraIds.length}/{numberOfKras} KRA निवडले |{" "}
+                        {selectedKraIds.length}/{numberOfKras} KRA(s) selected
+                      </span>
+                    )}
+                    {numberOfKras && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNumberOfKras("");
+                          setSelectedKraIds([]);
+                        }}
+                        className="px-3 py-1.5 text-sm text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+                      >
+                        ❌ Clear Selection
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-blue-600 mt-2">
+                    टिप: प्रथम संख्या निवडा, नंतर खालील टेबलमधून कोणतेही{" "}
+                    {numberOfKras || "N"} KRA निवडा. "7 KRAs" निवडल्यास सर्व
+                    आपोआप निवडले जातील.
+                    <br />
+                    Tip: First select a number, then choose any{" "}
+                    {numberOfKras || "N"} KRAs from the table below. Selecting
+                    "7 KRAs" will auto-select all.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -1138,19 +1615,19 @@ const KRAForm = () => {
                       <thead>
                         <tr className="bg-gov-blue text-white">
                           <th className="px-4 py-3 text-center font-semibold border-r border-blue-400 w-20">
-                            निवडा
+                            {t("निवडा", "Select")}
                           </th>
                           <th className="px-4 py-3 text-left font-semibold border-r border-blue-400 w-16">
-                            अ.क्र.
+                            {t("अ.क्र.", "Sr.")}
                           </th>
                           <th className="px-4 py-3 text-left font-semibold border-r border-blue-400 min-w-[300px]">
-                            KRA नाव
+                            {t("KRA नाव", "KRA Name")}
                           </th>
                           <th className="px-4 py-3 text-center font-semibold border-r border-blue-400 w-36">
-                            KRA वार्षिक उद्दिष्ट
+                            {t("वार्षिक उद्दिष्ट", "Annual Target")}
                           </th>
                           <th className="px-4 py-3 text-center font-semibold w-36">
-                            KRA साध्य
+                            {t("साध्य", "Achievement")}
                           </th>
                         </tr>
                       </thead>
@@ -1158,52 +1635,117 @@ const KRAForm = () => {
                         {displayKras.map((kra, index) => {
                           const isSelected = selectedKraIds.includes(kra.id);
                           const canSelect = Boolean(formData.achievementDate);
+                          const limit = parseInt(numberOfKras, 10) || 0;
+                          const isAtLimit =
+                            limit > 0 && selectedKraIds.length >= limit;
+                          const isDisabledByLimit = isAtLimit && !isSelected;
+                          const isRowFaded = isDisabledByLimit;
+
                           return (
                             <tr
                               key={kra.id}
-                              className={`border-b ${
-                                index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                              className={`border-b transition-all duration-300 ${
+                                isRowFaded
+                                  ? "bg-gray-100/70 opacity-40"
+                                  : index % 2 === 0
+                                    ? "bg-white"
+                                    : "bg-gray-50"
                               } ${
                                 isSelected
-                                  ? "hover:bg-blue-50"
-                                  : "hover:bg-gray-100"
-                              } transition-colors`}
+                                  ? "ring-2 ring-inset ring-blue-400 bg-blue-50/50"
+                                  : isRowFaded
+                                    ? ""
+                                    : "hover:bg-gray-100"
+                              }`}
+                              style={
+                                isRowFaded ? { filter: "grayscale(50%)" } : {}
+                              }
                             >
                               <td className="px-4 py-3 border-r border-gray-200 text-center">
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
-                                  disabled={!canSelect}
+                                  disabled={!canSelect || isDisabledByLimit}
                                   onChange={() => {
-                                    if (!canSelect) return;
+                                    if (!canSelect || isDisabledByLimit) return;
                                     toggleKraSelection(kra.id);
                                   }}
-                                  className="w-5 h-5 cursor-pointer accent-gov-blue disabled:cursor-not-allowed"
+                                  className={`w-5 h-5 accent-gov-blue transition-all duration-200 ${
+                                    isDisabledByLimit
+                                      ? "cursor-not-allowed opacity-30"
+                                      : canSelect
+                                        ? "cursor-pointer hover:scale-110"
+                                        : "cursor-not-allowed"
+                                  }`}
+                                  title={
+                                    isDisabledByLimit
+                                      ? t(
+                                          `कमाल ${limit} KRA निवडले`,
+                                          `Maximum ${limit} KRAs selected`,
+                                        )
+                                      : isSelected
+                                        ? t(
+                                            "निवड रद्द करा",
+                                            "Click to deselect",
+                                          )
+                                        : t("निवडा", "Click to select")
+                                  }
                                 />
                               </td>
-                              <td className="px-4 py-3 border-r border-gray-200 text-center font-medium text-gray-600">
+                              <td
+                                className={`px-4 py-3 border-r border-gray-200 text-center font-medium ${
+                                  isRowFaded ? "text-gray-400" : "text-gray-600"
+                                }`}
+                              >
                                 {index + 1}
                               </td>
                               <td
-                                className={`px-4 py-3 border-r border-gray-200 ${
-                                  canSelect
-                                    ? "cursor-pointer"
-                                    : "cursor-not-allowed"
-                                } select-none`}
+                                className={`px-4 py-3 border-r border-gray-200 select-none transition-all duration-200 ${
+                                  isDisabledByLimit
+                                    ? "cursor-not-allowed"
+                                    : canSelect
+                                      ? "cursor-pointer hover:bg-blue-50/50"
+                                      : "cursor-not-allowed"
+                                }`}
                                 title={
-                                  canSelect
-                                    ? "Click KRA name to select/deselect"
-                                    : "Select Achievement Date first"
+                                  isDisabledByLimit
+                                    ? t(
+                                        `कमाल ${limit} KRA निवडले. आणखी निवडण्यासाठी आधी एक KRA काढा.`,
+                                        `Max ${limit} KRAs selected. Deselect one to select another.`,
+                                      )
+                                    : canSelect
+                                      ? t(
+                                          "निवड/रद्द करण्यासाठी KRA नावावर क्लिक करा",
+                                          "Click KRA name to select/deselect",
+                                        )
+                                      : t(
+                                          "प्रथम उपलब्धी तारीख निवडा",
+                                          "Select Achievement Date first",
+                                        )
                                 }
                                 onClick={() => {
-                                  if (!canSelect) return;
+                                  if (!canSelect || isDisabledByLimit) return;
                                   toggleKraSelection(kra.id);
                                 }}
                               >
-                                <div className="font-bold text-gray-900">
+                                <div
+                                  className={`font-bold transition-colors duration-200 ${
+                                    isSelected
+                                      ? "text-blue-800"
+                                      : isRowFaded
+                                        ? "text-gray-400"
+                                        : "text-gray-900"
+                                  }`}
+                                >
                                   {kra.displayName}
                                 </div>
-                                <div className="text-xs font-semibold text-gray-700 mt-1">
+                                <div
+                                  className={`text-xs font-semibold mt-1 ${
+                                    isRowFaded
+                                      ? "text-gray-400"
+                                      : "text-gray-700"
+                                  }`}
+                                >
                                   Unit: {kra.unit}
                                 </div>
                               </td>
@@ -1212,6 +1754,14 @@ const KRAForm = () => {
                                   type="number"
                                   min="0"
                                   step="any"
+                                  onFocus={(e) => e.target.select()}
+                                  onWheel={(e) => {
+                                    if (
+                                      document.activeElement === e.currentTarget
+                                    ) {
+                                      e.currentTarget.blur();
+                                    }
+                                  }}
                                   placeholder={
                                     isSelected ? "Enter target" : "-"
                                   }
@@ -1224,12 +1774,14 @@ const KRAForm = () => {
                                     )
                                   }
                                   disabled={!isSelected}
-                                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                  className={`w-full px-3 py-2 border rounded-lg transition-all duration-200 ${
                                     !isSelected
-                                      ? "bg-gray-100 cursor-not-allowed opacity-50"
+                                      ? isRowFaded
+                                        ? "bg-gray-200/50 cursor-not-allowed opacity-30 border-gray-200"
+                                        : "bg-gray-100 cursor-not-allowed opacity-50 border-gray-300"
                                       : errors[`kra_${kra.id}_target`]
-                                        ? "border-red-500"
-                                        : "border-gray-300"
+                                        ? "border-red-500 focus:ring-2 focus:ring-red-500"
+                                        : "border-blue-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                                   }`}
                                 />
                                 {errors[`kra_${kra.id}_target`] &&
@@ -1244,6 +1796,14 @@ const KRAForm = () => {
                                   type="number"
                                   min="0"
                                   step="any"
+                                  onFocus={(e) => e.target.select()}
+                                  onWheel={(e) => {
+                                    if (
+                                      document.activeElement === e.currentTarget
+                                    ) {
+                                      e.currentTarget.blur();
+                                    }
+                                  }}
                                   placeholder={
                                     isSelected ? "Enter achievement" : "-"
                                   }
@@ -1258,12 +1818,14 @@ const KRAForm = () => {
                                     )
                                   }
                                   disabled={!isSelected}
-                                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                  className={`w-full px-3 py-2 border rounded-lg transition-all duration-200 ${
                                     !isSelected
-                                      ? "bg-gray-100 cursor-not-allowed opacity-50"
+                                      ? isRowFaded
+                                        ? "bg-gray-200/50 cursor-not-allowed opacity-30 border-gray-200"
+                                        : "bg-gray-100 cursor-not-allowed opacity-50 border-gray-300"
                                       : errors[`kra_${kra.id}_achievement`]
-                                        ? "border-red-500"
-                                        : "border-gray-300"
+                                        ? "border-red-500 focus:ring-2 focus:ring-red-500"
+                                        : "border-blue-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                                   }`}
                                 />
                                 {errors[`kra_${kra.id}_achievement`] &&
@@ -1281,19 +1843,89 @@ const KRAForm = () => {
                   </div>
 
                   {/* Selection Summary */}
-                  <div className="mt-4 flex justify-between items-center bg-gray-50 p-3 rounded-lg">
-                    <p className="text-sm text-gray-600">
-                      निवडलेले KRA:{" "}
-                      <strong className="text-gov-blue">
-                        {selectedKraIds.length}
-                      </strong>{" "}
-                      / {displayKras.length}
-                    </p>
-                    {selectedKraIds.length === 0 && (
-                      <p className="text-sm text-red-500">
-                        ⚠️ कृपया किमान एक KRA निवडा
-                      </p>
-                    )}
+                  <div
+                    className={`mt-4 flex flex-wrap justify-between items-center p-4 rounded-lg border-2 transition-all duration-300 ${
+                      numberOfKras &&
+                      selectedKraIds.length === parseInt(numberOfKras, 10)
+                        ? "bg-green-50 border-green-300"
+                        : numberOfKras && selectedKraIds.length > 0
+                          ? "bg-yellow-50 border-yellow-300"
+                          : "bg-gray-50 border-gray-200"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex items-center justify-center w-10 h-10 rounded-full ${
+                          numberOfKras &&
+                          selectedKraIds.length === parseInt(numberOfKras, 10)
+                            ? "bg-green-500 text-white"
+                            : "bg-gov-blue text-white"
+                        }`}
+                      >
+                        <span className="font-bold">
+                          {selectedKraIds.length}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">
+                          {t("निवडलेले KRA", "Selected KRAs")}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {numberOfKras
+                            ? t(
+                                `${selectedKraIds.length} / ${numberOfKras} (कमाल ${numberOfKras} निवडता येतील)`,
+                                `${selectedKraIds.length} / ${numberOfKras} (max ${numberOfKras} can be selected)`,
+                              )
+                            : t(
+                                `${selectedKraIds.length} / ${displayKras.length} (कृपया KRA संख्या निवडा)`,
+                                `${selectedKraIds.length} / ${displayKras.length} (please select number of KRAs)`,
+                              )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 sm:mt-0">
+                      {!numberOfKras && (
+                        <p className="text-sm text-orange-600 font-medium">
+                          ⚠️
+                          {t(
+                            "कृपया प्रथम KRA संख्या निवडा",
+                            "Please select number of KRAs first",
+                          )}
+                        </p>
+                      )}
+                      {numberOfKras && selectedKraIds.length === 0 && (
+                        <p className="text-sm text-red-500 font-medium">
+                          ⚠️
+                          {t(
+                            `कृपया ${numberOfKras} KRA निवडा`,
+                            `Please select ${numberOfKras} KRA(s)`,
+                          )}
+                        </p>
+                      )}
+                      {numberOfKras &&
+                        selectedKraIds.length > 0 &&
+                        selectedKraIds.length < parseInt(numberOfKras, 10) && (
+                          <p className="text-sm text-yellow-700 font-medium">
+                            ⏳
+                            {t(
+                              `आणखी ${parseInt(numberOfKras, 10) - selectedKraIds.length} KRA निवडा`,
+                              `Select ${parseInt(numberOfKras, 10) - selectedKraIds.length} more KRA(s)`,
+                            )}
+                          </p>
+                        )}
+                      {numberOfKras &&
+                        selectedKraIds.length ===
+                          parseInt(numberOfKras, 10) && (
+                          <p className="text-sm text-green-600 font-medium">
+                            ✅
+                            {t(
+                              `सर्व ${numberOfKras} KRA निवडले!`,
+                              `All ${numberOfKras} KRA(s) selected!`,
+                            )}
+                          </p>
+                        )}
+                    </div>
                   </div>
 
                   {errors.selectedKras && (
@@ -1307,9 +1939,9 @@ const KRAForm = () => {
               {/* Remarks */}
               <div className="mt-6">
                 <label htmlFor="remarks" className="form-label">
-                  शेरा / अडचणी
+                  {t("शेरा / अडचणी", "Remarks / Issues")}
                   <span className="text-gray-400 text-xs ml-2 font-normal">
-                    (Optional)
+                    {t("(ऐच्छिक)", "(Optional)")}
                   </span>
                 </label>
                 <textarea
@@ -1318,7 +1950,10 @@ const KRAForm = () => {
                   value={formData.remarks}
                   onChange={handleChange}
                   rows="3"
-                  placeholder="Enter any issues or difficulties here..."
+                  placeholder={t(
+                    "येथे कोणत्याही समस्या किंवा अडचणी लिहा...",
+                    "Enter any issues or difficulties here...",
+                  )}
                   className="form-textarea"
                 />
               </div>
@@ -1331,13 +1966,15 @@ const KRAForm = () => {
               <SectionIcon>
                 <ContactIcon />
               </SectionIcon>
-              संपर्क माहिती | Contact Information
+              {t("संपर्क माहिती", "Contact Information")}
             </div>
             <div className="section-content">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {userFullName && (
                   <div>
-                    <label className="form-label">Full Name</label>
+                    <label className="form-label">
+                      {t("पूर्ण नाव", "Full Name")}
+                    </label>
                     <input
                       className="form-input bg-gray-50"
                       value={userFullName}
@@ -1349,7 +1986,7 @@ const KRAForm = () => {
 
                 <div>
                   <label htmlFor="contactNumber" className="form-label">
-                    मोबाईल क्रमांक | Mobile Number
+                    {t("मोबाईल क्रमांक", "Mobile Number")}
                     <span className="required-star">*</span>
                   </label>
                   <div className="relative">
@@ -1417,7 +2054,7 @@ const KRAForm = () => {
                 {isSubmitting ? (
                   <>
                     <LoadingSpinner size="h-5 w-5" />
-                    <span>सबमिट होत आहे...</span>
+                    <span>{t("सबमिट होत आहे...", "Submitting...")}</span>
                   </>
                 ) : (
                   <>
@@ -1434,7 +2071,7 @@ const KRAForm = () => {
                         d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
                     </svg>
-                    <span>सबमिट करा | Submit</span>
+                    <span>{t("सबमिट करा", "Submit")}</span>
                   </>
                 )}
               </button>
@@ -1458,7 +2095,7 @@ const KRAForm = () => {
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                   />
                 </svg>
-                <span>रीसेट करा | Reset</span>
+                <span>{t("रीसेट करा", "Reset")}</span>
               </button>
             </div>
 
@@ -1467,19 +2104,36 @@ const KRAForm = () => {
                 <InfoIcon />
                 <div className="text-sm text-blue-700">
                   <p className="font-medium">
-                    महत्त्वाची सूचना | Important Note:
+                    {t("महत्त्वाची सूचना", "Important Note")}
                   </p>
                   <ul className="mt-1 space-y-1 text-blue-600">
                     <li>
                       • <span className="text-red-500 font-bold">*</span>{" "}
-                      चिन्हांकित फील्ड आवश्यक आहेत
+                      {t(
+                        "चिन्हांकित फील्ड आवश्यक आहेत",
+                        "Fields marked are required",
+                      )}
                     </li>
                     <li>
-                      • प्रत्येक महामंडळ/विभागासाठी वेगवेगळे KRA असू शकतात
+                      •
+                      {t(
+                        "प्रत्येक महामंडळ/विभागासाठी वेगवेगळे KRA असू शकतात",
+                        "KRAs may differ by corporation/region",
+                      )}
                     </li>
-                    <li>• निवडलेल्या KRA साठीच डेटा भरा</li>
                     <li>
-                      • वर्षानुसार KRA नाव बदलते (उदा. "सन 2024-25 मध्ये...")
+                      •
+                      {t(
+                        "निवडलेल्या KRA साठीच डेटा भरा",
+                        "Fill data only for selected KRAs",
+                      )}
+                    </li>
+                    <li>
+                      •
+                      {t(
+                        'वर्षानुसार KRA नाव बदलते (उदा. "सन 2024-25 मध्ये...")',
+                        'KRA names may change by year (e.g., "In year 2024-25...")',
+                      )}
                     </li>
                   </ul>
                 </div>
@@ -1492,10 +2146,11 @@ const KRAForm = () => {
         <div className="text-center mt-8 pb-8">
           <div className="inline-block bg-white px-8 py-4 rounded-lg shadow-md">
             <p className="text-sm text-gray-600 font-medium">
-              © {new Date().getFullYear()} जलसंपदा विभाग, महाराष्ट्र शासन
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Water Resources Department, Government of Maharashtra
+              © {new Date().getFullYear()}{" "}
+              {t(
+                "जलसंपदा विभाग, महाराष्ट्र शासन",
+                "Water Resources Department, Government of Maharashtra",
+              )}
             </p>
           </div>
         </div>

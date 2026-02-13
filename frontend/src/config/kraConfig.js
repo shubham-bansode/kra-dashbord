@@ -22,15 +22,21 @@ export const MASTER_KRAS = [
   {
     id: 1,
     name: "प्रकल्पाचे लाभक्षेत्रात प्रत्यक्ष सिंचन करणे (लक्ष हेक्टर)",
+    nameEn: "Actual irrigation in project benefit area (Lakh hectares)",
     shortName: "प्रत्यक्ष सिंचन",
+    shortNameEn: "Actual irrigation",
     unit: "लक्ष हेक्टर",
+    unitEn: "Lakh hectares",
     description: "Actual irrigation in project benefit area",
   },
   {
     id: 2,
     name: "सिंचन व बिगर सिंचन पाणीपट्टी वसुली करणे (रुपये लक्ष)",
+    nameEn: "Collection of irrigation and non-irrigation water cess (Rs. lakh)",
     shortName: "पाणीपट्टी वसुली",
+    shortNameEn: "Water cess collection",
     unit: "रुपये लक्ष",
+    unitEn: "Rs. lakh",
     description: "Collection of irrigation and non-irrigation water cess",
   },
   {
@@ -38,38 +44,54 @@ export const MASTER_KRAS = [
     // This KRA's name is dynamic based on the selected year
     // The actual name will be: "सन {year} मध्ये पूर्ण करावयाचे प्रकल्प (संख्या)"
     name: "सन {year} मध्ये पूर्ण करावयाचे प्रकल्प (संख्या)",
+    nameEn: "Projects to be completed in {year} (Count)",
     baseName: "मध्ये पूर्ण करावयाचे प्रकल्प (संख्या)",
+    baseNameEn: "Projects to be completed (Count)",
     shortName: "प्रकल्प पूर्ण",
+    shortNameEn: "Projects completion",
     unit: "संख्या",
+    unitEn: "Count",
     isYearDependent: true,
     description: "Projects to be completed in the selected financial year",
   },
   {
     id: 4,
     name: "सिंचन निर्मिती (हेक्टर)",
+    nameEn: "Irrigation creation (Hectares)",
     shortName: "सिंचन निर्मिती",
+    shortNameEn: "Irrigation creation",
     unit: "हेक्टर",
+    unitEn: "Hectares",
     description: "Irrigation creation capacity",
   },
   {
     id: 5,
     name: "पाणीसाठा निर्मिती (दलघमी)",
+    nameEn: "Water storage creation (MCM)",
     shortName: "पाणीसाठा निर्मिती",
+    shortNameEn: "Water storage",
     unit: "दलघमी",
+    unitEn: "MCM",
     description: "Water storage creation capacity",
   },
   {
     id: 6,
     name: "पाणी वापर संस्थांना लाभक्षेत्र हस्तांतरण करणे (हेक्टर)",
+    nameEn: "Transfer of benefit area to water user organizations (Hectares)",
     shortName: "लाभक्षेत्र हस्तांतरण",
+    shortNameEn: "Benefit area transfer",
     unit: "हेक्टर",
+    unitEn: "Hectares",
     description: "Transfer of benefit area to Water User Organizations",
   },
   {
     id: 7,
     name: "अवशिष्ट मधील प्रकल्प पूर्ण करणे (संख्या)",
+    nameEn: "Completion of residual projects (Count)",
     shortName: "अवशिष्ट प्रकल्प",
+    shortNameEn: "Residual projects",
     unit: "संख्या",
+    unitEn: "Count",
     description: "Completion of residual projects",
   },
 ];
@@ -204,6 +226,17 @@ export const getKraNameForYear = (kra, selectedYear) => {
   return kra.name;
 };
 
+export const getKraNameForYearEn = (kra, selectedYear) => {
+  if (kra.isYearDependent && selectedYear) {
+    // Keep year formatting as-is (e.g., 2025-26)
+    return (kra.nameEn || "Projects to be completed in {year} (Count)").replace(
+      "{year}",
+      selectedYear,
+    );
+  }
+  return kra.nameEn || kra.name;
+};
+
 /**
  * Get the active KRA configuration based on selected corporation and region
  * Region config overrides corporation config if it exists
@@ -245,6 +278,7 @@ export const getKrasForConfig = (config, selectedYear) => {
       ...masterKra,
       weight: configKra.weight,
       displayName: getKraNameForYear(masterKra, selectedYear),
+      displayNameEn: getKraNameForYearEn(masterKra, selectedYear),
     };
   });
 };

@@ -1,25 +1,50 @@
 const express = require('express');
 const router = express.Router();
 const Region = require('../models/Region');
+const Corporation = require('../models/Corporation');
+const { getAllowedRegionNames, isAllowedRegionName } = require('../config/googleFormHierarchy');
 
 // GET all regions
 router.get('/', async (req, res) => {
   try {
     const filter = { isActive: true };
-    
+
     // Filter by corporation if provided
     if (req.query.corporation) {
+      const corp = await Corporation.findById(req.query.corporation).select('name');
+      if (!corp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid corporation selected'
+        });
+      }
+
+      const allowedNames = getAllowedRegionNames(corp.name);
       filter.corporation = req.query.corporation;
+      filter.name = { $in: allowedNames };
+
+      const regions = await Region.find(filter)
+        .populate('corporation', 'name code')
+        .sort({ name: 1 });
+
+      return res.json({
+        success: true,
+        count: regions.length,
+        data: regions
+      });
     }
-    
+
+    // No corporation filter: only include Regions that match the Google Form exactly
     const regions = await Region.find(filter)
       .populate('corporation', 'name code')
       .sort({ name: 1 });
+
+    const filteredRegions = regions.filter((r) => isAllowedRegionName(r?.corporation?.name, r?.name));
     
     res.json({
       success: true,
-      count: regions.length,
-      data: regions
+      count: filteredRegions.length,
+      data: filteredRegions
     });
   } catch (error) {
     res.status(500).json({
@@ -33,17 +58,28 @@ router.get('/', async (req, res) => {
 // GET regions by corporation ID
 router.get('/by-corporation/:corporationId', async (req, res) => {
   try {
-    const regions = await Region.find({
+    const corp = await Corporation.findById(req.params.corporationId).select('name');
+    if (!corp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid corporation selected'
+      });
+    }
+
+    const allowedNames = getAllowedRegionNames(corp.name);
+
+    const filteredRegions = await Region.find({
       corporation: req.params.corporationId,
-      isActive: true
+      isActive: true,
+      name: { $in: allowedNames }
     })
       .populate('corporation', 'name code')
       .sort({ name: 1 });
     
     res.json({
       success: true,
-      count: regions.length,
-      data: regions
+      count: filteredRegions.length,
+      data: filteredRegions
     });
   } catch (error) {
     res.status(500).json({

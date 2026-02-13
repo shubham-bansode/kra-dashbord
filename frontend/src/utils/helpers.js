@@ -31,7 +31,7 @@ export const getMarathiMonths = () => {
   ];
 };
 
-// Parse financial year to get start and end dates
+// Parse education year to get start and end dates (June to May)
 export const parseFinancialYear = (kraYear) => {
   if (!kraYear) return null;
   
@@ -46,12 +46,13 @@ export const parseFinancialYear = (kraYear) => {
   return {
     startYear,
     endYear,
-    startDate: new Date(startYear, 3, 1), // April 1st
-    endDate: new Date(endYear, 2, 31)      // March 31st
+    // Education year runs from June 1st to May 31st
+    startDate: new Date(startYear, 5, 1), // June 1st
+    endDate: new Date(endYear, 4, 31), // May 31st
   };
 };
 
-// Validate if date falls within financial year
+// Validate if date falls within education year (June to May)
 export const isDateInFinancialYear = (date, kraYear) => {
   if (!date || !kraYear) return true;
   
@@ -62,10 +63,10 @@ export const isDateInFinancialYear = (date, kraYear) => {
   const month = checkDate.getMonth() + 1;
   const year = checkDate.getFullYear();
   
-  // Financial year runs from April to March
+  // Education year runs from June to May
   return (
-    (year === fyInfo.startYear && month >= 4) ||
-    (year === fyInfo.endYear && month <= 3)
+    (year === fyInfo.startYear && month >= 6) ||
+    (year === fyInfo.endYear && month <= 5)
   );
 };
 

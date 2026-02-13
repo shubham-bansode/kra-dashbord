@@ -26,7 +26,7 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
     const isAdmin = user?.role === "admin" || user?.role === "superadmin";
     if (!isAdmin) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="min-h-screen flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-12 text-center max-w-md">
             <div className="text-6xl mb-6">🔒</div>
             <h1 className="text-3xl font-bold text-red-600 mb-4">

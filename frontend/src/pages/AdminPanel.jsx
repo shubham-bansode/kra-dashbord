@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { adminApi } from "../services/api";
+import { adminApi, corporationApi, divisionApi } from "../services/api";
+import { useLanguage } from "../i18n/LanguageContext";
+import { localizeName } from "../utils/localize";
 
 const sumNumberField = (items, field) =>
   (Array.isArray(items) ? items : []).reduce(
@@ -68,6 +70,45 @@ const MONTHS_EN = {
   12: "Dec",
 };
 
+// KRA options with proper names
+const KRA_OPTIONS = [
+  {
+    id: 1,
+    name: "KRA 1 - प्रत्यक्ष सिंचन (लक्ष हेक्टर)",
+    nameEn: "KRA 1 - Actual irrigation (Lakh hectares)",
+  },
+  {
+    id: 2,
+    name: "KRA 2 - पाणीपट्टी वसुली (रु. लक्ष)",
+    nameEn: "KRA 2 - Water cess collection (Rs. lakh)",
+  },
+  {
+    id: 3,
+    name: "KRA 3 - प्रकल्प पूर्ण (संख्या)",
+    nameEn: "KRA 3 - Projects completion (Count)",
+  },
+  {
+    id: 4,
+    name: "KRA 4 - सिंचन निर्मिती (हेक्टर)",
+    nameEn: "KRA 4 - Irrigation creation (Hectares)",
+  },
+  {
+    id: 5,
+    name: "KRA 5 - पाणीसाठा निर्मिती (दलघमी)",
+    nameEn: "KRA 5 - Water storage creation (MCM)",
+  },
+  {
+    id: 6,
+    name: "KRA 6 - लाभक्षेत्र हस्तांतरण (हेक्टर)",
+    nameEn: "KRA 6 - Benefit area transfer (Hectares)",
+  },
+  {
+    id: 7,
+    name: "KRA 7 - अवशिष्ट प्रकल्प पूर्ण (संख्या)",
+    nameEn: "KRA 7 - Residual project completion (Count)",
+  },
+];
+
 // ==========================================
 // CONFIRM MODAL COMPONENT
 // ==========================================
@@ -88,6 +129,12 @@ function ConfirmModal({
   isLoading = false,
 }) {
   if (!isOpen) return null;
+
+  const { t, language } = useLanguage();
+  const resolvedTitle = language === "mr" ? titleMr || title : title;
+  const resolvedMessage = language === "mr" ? messageMr || message : message;
+  const resolvedCancelText = language === "mr" ? cancelTextMr : cancelText;
+  const resolvedConfirmText = language === "mr" ? confirmTextMr : confirmText;
 
   const typeStyles = {
     warning: {
@@ -139,8 +186,7 @@ function ConfirmModal({
               {icon || defaultIcons[type]}
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white">{title}</h3>
-              {titleMr && <p className="text-sm text-white/80">{titleMr}</p>}
+              <h3 className="text-xl font-bold text-white">{resolvedTitle}</h3>
             </div>
           </div>
         </div>
@@ -148,12 +194,7 @@ function ConfirmModal({
         {/* Body */}
         <div className="px-6 py-5">
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-            <p className="text-slate-700 leading-relaxed">{message}</p>
-            {messageMr && (
-              <p className="text-slate-500 text-sm mt-2 pt-2 border-t border-slate-200">
-                {messageMr}
-              </p>
-            )}
+            <p className="text-slate-700 leading-relaxed">{resolvedMessage}</p>
           </div>
         </div>
 
@@ -165,8 +206,7 @@ function ConfirmModal({
             className="px-5 py-2.5 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-100 hover:border-slate-400 transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
           >
             <span>✕</span>
-            <span>{cancelText}</span>
-            <span className="text-slate-400 text-sm">| {cancelTextMr}</span>
+            <span>{resolvedCancelText}</span>
           </button>
           <button
             onClick={onConfirm}
@@ -194,13 +234,12 @@ function ConfirmModal({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                <span>Processing...</span>
+                <span>{t("प्रक्रिया सुरू आहे...", "Processing...")}</span>
               </>
             ) : (
               <>
                 <span>✓</span>
-                <span>{confirmText}</span>
-                <span className="text-white/70 text-sm">| {confirmTextMr}</span>
+                <span>{resolvedConfirmText}</span>
               </>
             )}
           </button>
@@ -225,6 +264,10 @@ function AutoToast({
 }) {
   const [show, setShow] = useState(isVisible);
   const [isExiting, setIsExiting] = useState(false);
+
+  const { language } = useLanguage();
+  const resolvedTitle = language === "mr" ? titleMr || title : title;
+  const resolvedMessage = language === "mr" ? messageMr || message : message;
 
   useEffect(() => {
     if (isVisible) {
@@ -301,11 +344,9 @@ function AutoToast({
 
         {/* Content */}
         <div className="flex-1">
-          <h3 className="text-xl font-bold text-white mb-1">{title}</h3>
-          {titleMr && <p className="text-white/80 text-sm mb-2">{titleMr}</p>}
-          {message && <p className="text-white/90 text-sm">{message}</p>}
-          {messageMr && (
-            <p className="text-white/70 text-xs mt-1">{messageMr}</p>
+          <h3 className="text-xl font-bold text-white mb-1">{resolvedTitle}</h3>
+          {resolvedMessage && (
+            <p className="text-white/90 text-sm">{resolvedMessage}</p>
           )}
         </div>
 
@@ -336,6 +377,7 @@ function AutoToast({
 // ==========================================
 export default function AdminPanel() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [activeSection, setActiveSection] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [error, setError] = useState("");
@@ -357,19 +399,20 @@ export default function AdminPanel() {
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-12 text-center max-w-md">
           <div className="text-6xl mb-6">🔒</div>
           <h1 className="text-3xl font-bold text-red-600 mb-4">
-            Access Denied
+            {t("प्रवेश नाकारला", "Access Denied")}
           </h1>
-          <p className="text-xl text-gray-600 mb-2">प्रवेश नाकारला</p>
-          <p className="text-lg text-gray-500 mb-8">Admin access required.</p>
+          <p className="text-lg text-gray-500 mb-8">
+            {t("प्रशासक प्रवेश आवश्यक आहे.", "Admin access required.")}
+          </p>
           <a
             href="/"
             className="inline-block px-8 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold rounded-lg"
           >
-            Go Back Home
+            {t("मुख्य पृष्ठावर परत", "Go Back Home")}
           </a>
         </div>
       </div>
@@ -388,7 +431,9 @@ export default function AdminPanel() {
             {!sidebarCollapsed && (
               <div>
                 <h1 className="text-lg font-bold text-white">Admin Panel</h1>
-                <p className="text-xs text-slate-400">व्यवस्थापन पॅनेल</p>
+                <p className="text-xs text-slate-400">
+                  {t("व्यवस्थापन पॅनेल", "Management Panel")}
+                </p>
               </div>
             )}
             <button
@@ -438,8 +483,9 @@ export default function AdminPanel() {
               <span className="text-xl">{item.icon}</span>
               {!sidebarCollapsed && (
                 <div className="text-left">
-                  <p className="font-medium text-sm">{item.label}</p>
-                  <p className="text-xs opacity-70">{item.labelMr}</p>
+                  <p className="font-medium text-sm">
+                    {t(item.labelMr, item.label)}
+                  </p>
                 </div>
               )}
             </button>
@@ -453,7 +499,9 @@ export default function AdminPanel() {
             className={`flex items-center gap-3 px-4 py-2 text-slate-400 hover:text-white transition-colors ${sidebarCollapsed ? "justify-center" : ""}`}
           >
             <span>🏠</span>
-            {!sidebarCollapsed && <span className="text-sm">Back to Home</span>}
+            {!sidebarCollapsed && (
+              <span className="text-sm">{t("मुख्यपृष्ठ", "Back to Home")}</span>
+            )}
           </a>
         </div>
       </aside>
@@ -468,11 +516,11 @@ export default function AdminPanel() {
             <div>
               <h2 className="text-xl font-bold text-slate-800">
                 {SIDEBAR_ITEMS.find((i) => i.id === activeSection)?.icon}{" "}
-                {SIDEBAR_ITEMS.find((i) => i.id === activeSection)?.label}
+                {t(
+                  SIDEBAR_ITEMS.find((i) => i.id === activeSection)?.labelMr,
+                  SIDEBAR_ITEMS.find((i) => i.id === activeSection)?.label,
+                )}
               </h2>
-              <p className="text-sm text-slate-500">
-                {SIDEBAR_ITEMS.find((i) => i.id === activeSection)?.labelMr}
-              </p>
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-slate-500">
@@ -533,7 +581,13 @@ export default function AdminPanel() {
           {activeSection === "years" && (
             <YearsSection setError={setError} setSuccess={setSuccess} />
           )}
-          {activeSection === "settings" && <SettingsSection />}
+          {activeSection === "settings" && (
+            <SettingsSection
+              isSuperAdmin={isSuperAdmin}
+              setError={setError}
+              setSuccess={setSuccess}
+            />
+          )}
         </div>
       </main>
     </div>
@@ -544,6 +598,7 @@ export default function AdminPanel() {
 // DASHBOARD SECTION
 // ==========================================
 function DashboardSection({ setError }) {
+  const { t, language } = useLanguage();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recentEntries, setRecentEntries] = useState([]);
@@ -566,7 +621,12 @@ function DashboardSection({ setError }) {
     }
   };
 
-  if (loading && !stats) return <LoadingSpinner text="Loading dashboard..." />;
+  if (loading && !stats)
+    return (
+      <LoadingSpinner
+        text={t("डॅशबोर्ड लोड होत आहे...", "Loading dashboard...")}
+      />
+    );
 
   return (
     <div className="space-y-6">
@@ -574,11 +634,11 @@ function DashboardSection({ setError }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-800">
-            Dashboard Overview
+            {t("डॅशबोर्ड सारांश", "Dashboard Overview")}
           </h2>
           <p className="text-sm text-slate-500">
-            Last updated: {lastRefresh.toLocaleTimeString("en-IN")} (Manual
-            refresh)
+            {t("शेवटचे अपडेट:", "Last updated:")}{" "}
+            {lastRefresh.toLocaleTimeString("en-IN")} (Manual refresh)
           </p>
         </div>
         <button
@@ -588,7 +648,7 @@ function DashboardSection({ setError }) {
           }}
           className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center gap-2 shadow-lg"
         >
-          🔄 Refresh Now
+          {t("🔄 आत्ता रिफ्रेश करा", "🔄 Refresh Now")}
         </button>
       </div>
 
@@ -596,34 +656,34 @@ function DashboardSection({ setError }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           icon="📝"
-          title="Total Entries"
+          title={t("एकूण नोंदी", "Total Entries")}
           value={stats?.totalEntries || 0}
-          subtitle="एकूण नोंदी"
-          trend="+12% this month"
+          subtitle={t("या महिन्यात", "This month")}
+          trend={t("+12%", "+12%")}
           color="blue"
         />
         <StatCard
           icon="👥"
-          title="Active Users"
+          title={t("सक्रिय वापरकर्ते", "Active Users")}
           value={stats?.totalUsers || 0}
-          subtitle="सक्रिय वापरकर्ते"
-          trend="Active this week"
+          subtitle={t("या आठवड्यात", "This week")}
+          trend={t("सक्रिय", "Active")}
           color="green"
         />
         <StatCard
           icon="🏢"
-          title="Corporations"
+          title={t("महामंडळे", "Corporations")}
           value={stats?.totalCorporations || 0}
-          subtitle="महामंडळे"
-          trend="All active"
+          subtitle={t("स्थिती", "Status")}
+          trend={t("सर्व सक्रिय", "All active")}
           color="purple"
         />
         <StatCard
           icon="📅"
-          title="Financial Year"
+          title={t("आर्थिक वर्ष", "Financial Year")}
           value={stats?.activeFinancialYear || "N/A"}
-          subtitle="सक्रिय आर्थिक वर्ष"
-          trend="Current"
+          subtitle={t("सक्रिय", "Active")}
+          trend={t("सध्याचे", "Current")}
           color="orange"
         />
       </div>
@@ -633,7 +693,7 @@ function DashboardSection({ setError }) {
         {/* Monthly Trend Chart */}
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <h3 className="text-lg font-bold text-slate-800 mb-4">
-            📈 Monthly Entry Trend | मासिक प्रवृत्ती
+            {t("📈 मासिक प्रवृत्ती", "📈 Monthly Entry Trend")}
           </h3>
           {stats?.entriesByMonth?.length > 0 ? (
             <div className="space-y-3">
@@ -646,7 +706,11 @@ function DashboardSection({ setError }) {
                 return (
                   <div key={idx} className="flex items-center gap-3">
                     <span className="text-sm text-slate-500 w-20">
-                      {MONTHS_EN[item._id.month]} {item._id.year}
+                      {(language === "mr"
+                        ? MONTHS_MARATHI[item._id.month]
+                        : MONTHS_EN[item._id.month]) ||
+                        MONTHS_EN[item._id.month]}{" "}
+                      {item._id.year}
                     </span>
                     <div className="flex-1 bg-slate-100 rounded-full h-6 overflow-hidden">
                       <div
@@ -663,14 +727,16 @@ function DashboardSection({ setError }) {
               })}
             </div>
           ) : (
-            <p className="text-slate-500 text-center py-8">No data available</p>
+            <p className="text-slate-500 text-center py-8">
+              {t("डेटा उपलब्ध नाही", "No data available")}
+            </p>
           )}
         </div>
 
         {/* Corporation-wise Distribution */}
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <h3 className="text-lg font-bold text-slate-800 mb-4">
-            🏢 Corporation Distribution | महामंडळ वितरण
+            {t("🏢 महामंडळ वितरण", "🏢 Corporation Distribution")}
           </h3>
           {stats?.entriesByCorporation?.length > 0 ? (
             <div className="space-y-3">
@@ -692,7 +758,7 @@ function DashboardSection({ setError }) {
                         className={`w-3 h-3 rounded-full bg-gradient-to-r ${colors[idx % colors.length]}`}
                       ></div>
                       <span className="font-medium text-slate-700">
-                        {corp._id || "Unknown"}
+                        {corp._id || t("अज्ञात", "Unknown")}
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-slate-200 rounded-full text-sm font-bold text-slate-700">
@@ -703,7 +769,9 @@ function DashboardSection({ setError }) {
               })}
             </div>
           ) : (
-            <p className="text-slate-500 text-center py-8">No data available</p>
+            <p className="text-slate-500 text-center py-8">
+              {t("डेटा उपलब्ध नाही", "No data available")}
+            </p>
           )}
         </div>
       </div>
@@ -712,9 +780,11 @@ function DashboardSection({ setError }) {
       <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
         <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex items-center justify-between">
           <h3 className="text-lg font-bold text-white">
-            📝 Recent Entries | अलीकडील नोंदी
+            {t("📝 अलीकडील नोंदी", "📝 Recent Entries")}
           </h3>
-          <span className="text-sm text-slate-300">Last 10 entries</span>
+          <span className="text-sm text-slate-300">
+            {t("शेवटच्या 10 नोंदी", "Last 10 entries")}
+          </span>
         </div>
         {recentEntries.length > 0 ? (
           <div className="overflow-x-auto">
@@ -722,25 +792,25 @@ function DashboardSection({ setError }) {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Corporation
+                    {t("महामंडळ", "Corporation")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                     KRA
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Year
+                    {t("वर्ष", "Year")}
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Target
+                    {t("लक्ष्य", "Target")}
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Achievement
+                    {t("साध्य", "Achievement")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Date
+                    {t("तारीख", "Date")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    User
+                    {t("वापरकर्ता", "User")}
                   </th>
                 </tr>
               </thead>
@@ -818,16 +888,23 @@ function DashboardSection({ setError }) {
 // ENTRIES SECTION (All User Entries with CRUD)
 // ==========================================
 function EntriesSection({ setError, setSuccess }) {
+  const { t, language } = useLanguage();
   const [entries, setEntries] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     corporation: "",
+    region: "",
+    circle: "",
+    division: "",
     kraYear: "",
     search: "",
     kra: "",
   });
   const [dropdownData, setDropdownData] = useState(null);
+  const [filteredRegions, setFilteredRegions] = useState([]);
+  const [filteredCircles, setFilteredCircles] = useState([]);
+  const [filteredDivisions, setFilteredDivisions] = useState([]);
   const [selectedEntries, setSelectedEntries] = useState([]);
   const [editingEntry, setEditingEntry] = useState(null);
   const [viewingEntry, setViewingEntry] = useState(null);
@@ -841,6 +918,70 @@ function EntriesSection({ setError, setSuccess }) {
   useEffect(() => {
     fetchEntries();
   }, [filters, pagination.page]);
+
+  // Filter regions based on selected corporation
+  useEffect(() => {
+    if (filters.corporation && dropdownData?.regions) {
+      const regions = dropdownData.regions.filter(
+        (r) => r.corporation?._id === filters.corporation,
+      );
+      setFilteredRegions(regions);
+    } else {
+      setFilteredRegions([]);
+    }
+  }, [filters.corporation, dropdownData?.regions]);
+
+  // Filter circles based on selected region
+  useEffect(() => {
+    if (filters.region && dropdownData?.circles) {
+      const circles = dropdownData.circles.filter(
+        (c) => c.region?._id === filters.region,
+      );
+      setFilteredCircles(circles);
+    } else {
+      setFilteredCircles([]);
+    }
+  }, [filters.region, dropdownData?.circles]);
+
+  // Load divisions based on selected circle
+  useEffect(() => {
+    const loadDivisions = async () => {
+      if (!filters.circle) {
+        setFilteredDivisions([]);
+        return;
+      }
+
+      try {
+        const res = await divisionApi.getByCircle(filters.circle);
+        setFilteredDivisions(
+          Array.isArray(res.data?.data) ? res.data.data : [],
+        );
+      } catch (err) {
+        setFilteredDivisions([]);
+      }
+    };
+
+    loadDivisions();
+  }, [filters.circle]);
+
+  // Handle corporation change - reset region and circle
+  const handleCorporationChange = (value) => {
+    setFilters((f) => ({
+      ...f,
+      corporation: value,
+      region: "",
+      circle: "",
+      division: "",
+    }));
+    setFilteredCircles([]);
+    setFilteredDivisions([]);
+  };
+
+  // Handle region change - reset circle
+  const handleRegionChange = (value) => {
+    setFilters((f) => ({ ...f, region: value, circle: "", division: "" }));
+    setFilteredDivisions([]);
+  };
 
   const fetchDropdownData = async () => {
     try {
@@ -870,14 +1011,17 @@ function EntriesSection({ setError, setSuccess }) {
   const handleDelete = async (id) => {
     if (
       !window.confirm(
-        "Are you sure you want to delete this entry? | ही नोंद हटवायची आहे का?",
+        t(
+          "ही नोंद हटवायची आहे का?",
+          "Are you sure you want to delete this entry?",
+        ),
       )
     )
       return;
 
     try {
       await adminApi.deleteEntry(id);
-      setSuccess("Entry deleted successfully | नोंद यशस्वीरित्या हटवली");
+      setSuccess(t("नोंद यशस्वीरित्या हटवली", "Entry deleted successfully"));
       fetchEntries();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to delete entry");
@@ -886,16 +1030,22 @@ function EntriesSection({ setError, setSuccess }) {
 
   const handleBulkDelete = async () => {
     if (selectedEntries.length === 0) return;
+    const count = selectedEntries.length;
     if (
       !window.confirm(
-        `Delete ${selectedEntries.length} entries? | ${selectedEntries.length} नोंदी हटवायच्या आहेत का?`,
+        t(`${count} नोंदी हटवायच्या आहेत का?`, `Delete ${count} entries?`),
       )
     )
       return;
 
     try {
       await adminApi.bulkDeleteEntries(selectedEntries);
-      setSuccess(`${selectedEntries.length} entries deleted successfully`);
+      setSuccess(
+        t(
+          `${count} नोंदी यशस्वीरित्या हटवल्या`,
+          `${count} entries deleted successfully`,
+        ),
+      );
       setSelectedEntries([]);
       fetchEntries();
     } catch (err) {
@@ -918,7 +1068,18 @@ function EntriesSection({ setError, setSuccess }) {
   };
 
   const clearFilters = () => {
-    setFilters({ corporation: "", kraYear: "", search: "", kra: "" });
+    setFilters({
+      corporation: "",
+      region: "",
+      circle: "",
+      division: "",
+      kraYear: "",
+      search: "",
+      kra: "",
+    });
+    setFilteredRegions([]);
+    setFilteredCircles([]);
+    setFilteredDivisions([]);
     setPagination((p) => ({ ...p, page: 1 }));
   };
 
@@ -928,11 +1089,11 @@ function EntriesSection({ setError, setSuccess }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-800">
-            All Entries | सर्व नोंदी
+            {t("सर्व नोंदी", "All Entries")}
           </h2>
           <p className="text-sm text-slate-500">
-            Last updated: {lastRefresh.toLocaleTimeString("en-IN")}{" "}
-            (Auto-refresh: 10s)
+            {t("शेवटचे अपडेट:", "Last updated:")}{" "}
+            {lastRefresh.toLocaleTimeString("en-IN")} (Auto-refresh: 10s)
           </p>
         </div>
         <button
@@ -942,7 +1103,7 @@ function EntriesSection({ setError, setSuccess }) {
           }}
           className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center gap-2 shadow-lg"
         >
-          🔄 Refresh Now
+          {t("🔄 आत्ता रिफ्रेश करा", "🔄 Refresh Now")}
         </button>
       </div>
 
@@ -952,11 +1113,14 @@ function EntriesSection({ setError, setSuccess }) {
           {/* Search */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-slate-600 mb-1">
-              Search | शोधा
+              {t("शोधा", "Search")}
             </label>
             <input
               type="text"
-              placeholder="Search by contact, remarks..."
+              placeholder={t(
+                "संपर्क, टिप्पणी इ. ने शोधा...",
+                "Search by contact, remarks...",
+              )}
               value={filters.search}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, search: e.target.value }))
@@ -968,19 +1132,85 @@ function EntriesSection({ setError, setSuccess }) {
           {/* Corporation Filter */}
           <div className="w-48">
             <label className="block text-sm font-medium text-slate-600 mb-1">
-              Corporation | महामंडळ
+              {t("महामंडळ", "Corporation")}
             </label>
             <select
               value={filters.corporation}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, corporation: e.target.value }))
-              }
+              onChange={(e) => handleCorporationChange(e.target.value)}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="">All Corporations</option>
+              <option value="">{t("सर्व महामंडळे", "All Corporations")}</option>
               {dropdownData?.corporations?.map((c) => (
                 <option key={c._id} value={c._id}>
-                  {c.name}
+                  {localizeName(c, language)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Region Filter */}
+          <div className="w-48">
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              {t("प्रदेश", "Region")}
+            </label>
+            <select
+              value={filters.region}
+              onChange={(e) => handleRegionChange(e.target.value)}
+              disabled={!filters.corporation || filteredRegions.length === 0}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+            >
+              <option value="">{t("सर्व प्रदेश", "All Regions")}</option>
+              {filteredRegions.map((r) => (
+                <option key={r._id} value={r._id}>
+                  {localizeName(r, language)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Circle Filter */}
+          <div className="w-48">
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              {t("मंडळ", "Circle")}
+            </label>
+            <select
+              value={filters.circle}
+              onChange={(e) =>
+                setFilters((f) => ({
+                  ...f,
+                  circle: e.target.value,
+                  division: "",
+                }))
+              }
+              disabled={!filters.region || filteredCircles.length === 0}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+            >
+              <option value="">{t("सर्व मंडळे", "All Circles")}</option>
+              {filteredCircles.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {localizeName(c, language)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Division Filter */}
+          <div className="w-56">
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              {t("Division", "Division")}
+            </label>
+            <select
+              value={filters.division}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, division: e.target.value }))
+              }
+              disabled={!filters.circle || filteredDivisions.length === 0}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+            >
+              <option value="">{t("All Divisions", "All Divisions")}</option>
+              {filteredDivisions.map((d) => (
+                <option key={d._id} value={d._id}>
+                  {d.name}
                 </option>
               ))}
             </select>
@@ -989,7 +1219,7 @@ function EntriesSection({ setError, setSuccess }) {
           {/* Year Filter */}
           <div className="w-40">
             <label className="block text-sm font-medium text-slate-600 mb-1">
-              Year | वर्ष
+              {t("वर्ष", "Year")}
             </label>
             <select
               value={filters.kraYear}
@@ -998,7 +1228,7 @@ function EntriesSection({ setError, setSuccess }) {
               }
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="">All Years</option>
+              <option value="">{t("सर्व वर्षे", "All Years")}</option>
               {dropdownData?.financialYears?.map((y) => (
                 <option key={y._id} value={y.year}>
                   {y.year}
@@ -1010,7 +1240,7 @@ function EntriesSection({ setError, setSuccess }) {
           {/* KRA Filter */}
           <div className="w-48">
             <label className="block text-sm font-medium text-slate-600 mb-1">
-              KRA
+              {t("फलनिष्पत्ती", "KRA")}
             </label>
             <select
               value={filters.kra}
@@ -1019,10 +1249,10 @@ function EntriesSection({ setError, setSuccess }) {
               }
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="">All KRAs</option>
-              {dropdownData?.kras?.map((k) => (
-                <option key={k._id} value={k._id}>
-                  KRA {k.kraNumber}
+              <option value="">{t("सर्व KRA", "All KRAs")}</option>
+              {KRA_OPTIONS.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {localizeName(k, language)}
                 </option>
               ))}
             </select>
@@ -1034,13 +1264,13 @@ function EntriesSection({ setError, setSuccess }) {
               onClick={clearFilters}
               className="px-4 py-2.5 border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors"
             >
-              Clear
+              {t("क्लिअर", "Clear")}
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg shadow-indigo-200"
             >
-              ➕ Add Entry
+              {t("➕ नोंद जोडा", "➕ Add Entry")}
             </button>
           </div>
         </div>
@@ -1049,7 +1279,8 @@ function EntriesSection({ setError, setSuccess }) {
         {selectedEntries.length > 0 && (
           <div className="mt-4 pt-4 border-t border-slate-200 flex items-center justify-between">
             <span className="text-sm text-slate-600">
-              <strong>{selectedEntries.length}</strong> entries selected
+              <strong>{selectedEntries.length}</strong>{" "}
+              {t("नोंदी निवडल्या", "entries selected")}
             </span>
             <button
               onClick={handleBulkDelete}
@@ -1273,7 +1504,10 @@ function EntriesSection({ setError, setSuccess }) {
             setEditingEntry(null);
             fetchEntries();
             setSuccess(
-              "Entry updated successfully | नोंद यशस्वीरित्या अद्यतनित केली",
+              t(
+                "नोंद यशस्वीरित्या अद्यतनित केली",
+                "Entry updated successfully",
+              ),
             );
           }}
           setError={setError}
@@ -1288,7 +1522,7 @@ function EntriesSection({ setError, setSuccess }) {
           onSave={() => {
             setShowCreateModal(false);
             fetchEntries();
-            setSuccess("Entry created successfully | नवीन नोंद तयार केली");
+            setSuccess(t("नवीन नोंद तयार केली", "Entry created successfully"));
           }}
           setError={setError}
         />
@@ -1301,6 +1535,7 @@ function EntriesSection({ setError, setSuccess }) {
 // VIEW ENTRY MODAL
 // ==========================================
 function ViewEntryModal({ entry, onClose }) {
+  const { t, language } = useLanguage();
   const totalTarget = sumNumberField(entry?.kras, "annualTarget");
   const totalAchievement = sumNumberField(entry?.kras, "kraAchievement");
   const selectedIds = getSelectedKraIds(entry);
@@ -1316,7 +1551,7 @@ function ViewEntryModal({ entry, onClose }) {
       >
         <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 rounded-t-2xl flex items-center justify-between">
           <h2 className="text-xl font-bold text-white">
-            📋 Entry Details | नोंद तपशील
+            {t("📋 नोंद तपशील", "📋 Entry Details")}
           </h2>
           <button
             onClick={onClose}
@@ -1330,26 +1565,38 @@ function ViewEntryModal({ entry, onClose }) {
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <InfoItem
-              label="Corporation | महामंडळ"
-              value={entry.corporation?.name}
+              label={t("महामंडळ", "Corporation")}
+              value={localizeName(entry.corporation, language)}
             />
-            <InfoItem label="Year | वर्ष" value={entry.kraYear} />
+            <InfoItem label={t("वर्ष", "Year")} value={entry.kraYear} />
             <InfoItem
-              label="Region | विभाग"
-              value={entry.region?.name || "N/A"}
+              label={t("विभाग", "Region")}
+              value={
+                localizeName(entry.region, language) || t("लागू नाही", "N/A")
+              }
             />
             <InfoItem
-              label="Circle | वर्तुळ"
-              value={entry.circle?.name || "N/A"}
+              label={t("वर्तुळ", "Circle")}
+              value={
+                localizeName(entry.circle, language) || t("लागू नाही", "N/A")
+              }
+            />
+            <InfoItem
+              label={t("विभाग (Division)", "Division")}
+              value={entry?.division?.name || t("लागू नाही", "N/A")}
             />
           </div>
 
           {/* KRA Info */}
           <div className="bg-indigo-50 rounded-xl p-4">
-            <h4 className="font-semibold text-indigo-800 mb-2">KRA Details</h4>
+            <h4 className="font-semibold text-indigo-800 mb-2">
+              {t("KRA तपशील", "KRA Details")}
+            </h4>
             <p className="text-indigo-700 text-sm">
-              Selected KRAs:{" "}
-              {selectedIds.length > 0 ? selectedIds.join(", ") : "None"}
+              {t("निवडलेले KRA:", "Selected KRAs:")}{" "}
+              {selectedIds.length > 0
+                ? selectedIds.join(", ")
+                : t("काहीही नाही", "None")}
             </p>
 
             <div className="mt-3 overflow-x-auto">
@@ -1357,26 +1604,37 @@ function ViewEntryModal({ entry, onClose }) {
                 <thead>
                   <tr className="text-left text-indigo-800">
                     <th className="py-2 pr-3">KRA</th>
-                    <th className="py-2 pr-3">Name</th>
-                    <th className="py-2 text-right">Target</th>
-                    <th className="py-2 text-right">Achievement</th>
+                    <th className="py-2 pr-3">{t("नाव", "Name")}</th>
+                    <th className="py-2 text-right">{t("लक्ष्य", "Target")}</th>
+                    <th className="py-2 text-right">
+                      {t("साध्य", "Achievement")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-indigo-100">
-                  {(Array.isArray(entry.kras) ? entry.kras : []).map((k) => (
-                    <tr key={k.kraId}>
-                      <td className="py-2 pr-3 font-semibold text-indigo-800">
-                        KRA {k.kraId}
-                      </td>
-                      <td className="py-2 pr-3 text-indigo-700">{k.kraName}</td>
-                      <td className="py-2 text-right text-indigo-700">
-                        {(Number(k.annualTarget) || 0).toLocaleString()}
-                      </td>
-                      <td className="py-2 text-right text-indigo-700">
-                        {(Number(k.kraAchievement) || 0).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
+                  {(Array.isArray(entry.kras) ? entry.kras : []).map((k) => {
+                    const kraOption = KRA_OPTIONS.find((o) => o.id === k.kraId);
+                    const displayName = kraOption
+                      ? localizeName(kraOption, language)
+                      : k.kraName;
+
+                    return (
+                      <tr key={k.kraId}>
+                        <td className="py-2 pr-3 font-semibold text-indigo-800">
+                          KRA {k.kraId}
+                        </td>
+                        <td className="py-2 pr-3 text-indigo-700">
+                          {displayName}
+                        </td>
+                        <td className="py-2 text-right text-indigo-700">
+                          {(Number(k.annualTarget) || 0).toLocaleString()}
+                        </td>
+                        <td className="py-2 text-right text-indigo-700">
+                          {(Number(k.kraAchievement) || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1386,7 +1644,7 @@ function ViewEntryModal({ entry, onClose }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-blue-50 rounded-xl p-4 text-center">
               <p className="text-sm text-blue-600 mb-1">
-                Annual Target | वार्षिक लक्ष्य
+                {t("वार्षिक लक्ष्य", "Annual Target")}
               </p>
               <p className="text-3xl font-bold text-blue-700">
                 {totalTarget.toLocaleString()}
@@ -1394,7 +1652,7 @@ function ViewEntryModal({ entry, onClose }) {
             </div>
             <div className="bg-green-50 rounded-xl p-4 text-center">
               <p className="text-sm text-green-600 mb-1">
-                Achievement | उपलब्धी
+                {t("साध्य", "Achievement")}
               </p>
               <p className="text-3xl font-bold text-green-700">
                 {totalAchievement.toLocaleString()}
@@ -1417,7 +1675,7 @@ function ViewEntryModal({ entry, onClose }) {
           {entry.remarks && (
             <div className="bg-slate-50 rounded-xl p-4">
               <h4 className="font-semibold text-slate-700 mb-2">
-                Remarks | टिप्पणी
+                {t("टिप्पणी", "Remarks")}
               </h4>
               <p className="text-slate-600">{entry.remarks}</p>
             </div>
@@ -1440,14 +1698,54 @@ function ViewEntryModal({ entry, onClose }) {
 // USERS SECTION
 // ==========================================
 function UsersSection({ isSuperAdmin, setError, setSuccess }) {
+  const { t, language } = useLanguage();
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
+  const [corporations, setCorporations] = useState([]);
+  const [corpLoading, setCorpLoading] = useState(false);
+
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userForm, setUserForm] = useState({
+    fullName: "",
+    mobileNumber: "",
+    corporation: "",
+    password: "",
+    role: "user",
+  });
+  const [savingUser, setSavingUser] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(false);
+
   useEffect(() => {
     fetchUsers();
   }, [pagination.page, search]);
+
+  useEffect(() => {
+    fetchCorporations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchCorporations = async () => {
+    try {
+      setCorpLoading(true);
+      const { data } = await adminApi.getDropdownData();
+      setCorporations(data.data?.corporations || []);
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          t("महामंडळे लोड करण्यात अयशस्वी", "Failed to load corporations"),
+      );
+    } finally {
+      setCorpLoading(false);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -1459,7 +1757,10 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
       setUsers(data.data.users);
       setPagination(data.data.pagination);
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to load users");
+      setError(
+        err.response?.data?.message ||
+          t("वापरकर्ते लोड करण्यात अयशस्वी", "Failed to load users"),
+      );
     } finally {
       setLoading(false);
     }
@@ -1469,23 +1770,150 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
     try {
       const { data } = await adminApi.toggleUserStatus(id);
       setSuccess(
-        `User ${data.data.isActive ? "activated" : "deactivated"} successfully`,
+        data.data.isActive
+          ? t("वापरकर्ता सक्रिय केला", "User activated")
+          : t("वापरकर्ता निष्क्रिय केला", "User deactivated"),
       );
       fetchUsers();
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to update user");
+      setError(
+        err.response?.data?.message ||
+          t("वापरकर्ता अपडेट करण्यात अयशस्वी", "Failed to update user"),
+      );
     }
   };
 
   const handleRoleChange = async (id, newRole) => {
-    if (!window.confirm(`Change user role to ${newRole}?`)) return;
+    if (
+      !window.confirm(
+        t(
+          `वापरकर्त्याची भूमिका ${newRole} अशी बदलायची?`,
+          `Change user role to ${newRole}?`,
+        ),
+      )
+    )
+      return;
 
     try {
       await adminApi.updateUserRole(id, newRole);
-      setSuccess("User role updated successfully");
+      setSuccess(t("वापरकर्त्याची भूमिका अपडेट केली", "User role updated"));
       fetchUsers();
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to update role");
+      setError(
+        err.response?.data?.message ||
+          t("भूमिका अपडेट करण्यात अयशस्वी", "Failed to update role"),
+      );
+    }
+  };
+
+  const openCreateUser = () => {
+    setEditingUser(null);
+    setUserForm({
+      fullName: "",
+      mobileNumber: "",
+      corporation: "",
+      password: "",
+      role: "user",
+    });
+    setUserModalOpen(true);
+  };
+
+  const openEditUser = (u) => {
+    setEditingUser(u);
+    setUserForm({
+      fullName: u?.fullName || "",
+      mobileNumber: u?.mobileNumber || "",
+      corporation: u?.corporation?._id || u?.corporation || "",
+      password: "",
+      role: u?.role || "user",
+    });
+    setUserModalOpen(true);
+  };
+
+  const closeUserModal = () => {
+    if (savingUser) return;
+    setUserModalOpen(false);
+    setEditingUser(null);
+  };
+
+  const handleSaveUser = async () => {
+    if (!isSuperAdmin) return;
+
+    const payload = {
+      fullName: userForm.fullName?.trim(),
+      mobileNumber: userForm.mobileNumber?.trim(),
+      corporation: userForm.corporation,
+    };
+
+    if (!payload.fullName || !payload.mobileNumber || !payload.corporation) {
+      setError(
+        t("कृपया सर्व आवश्यक माहिती भरा", "Please fill all required fields"),
+      );
+      return;
+    }
+
+    try {
+      setSavingUser(true);
+
+      if (editingUser?._id) {
+        const updatePayload = { ...payload };
+        if (userForm.password?.trim())
+          updatePayload.password = userForm.password.trim();
+        await adminApi.updateUser(editingUser._id, updatePayload);
+        setSuccess(t("वापरकर्ता अपडेट केला", "User updated"));
+      } else {
+        if (!userForm.password?.trim()) {
+          setError(t("पासवर्ड आवश्यक आहे", "Password is required"));
+          return;
+        }
+        await adminApi.createUser({
+          ...payload,
+          password: userForm.password.trim(),
+          role: userForm.role,
+        });
+        setSuccess(t("वापरकर्ता तयार केला", "User created"));
+      }
+
+      setUserModalOpen(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          t("वापरकर्ता जतन करण्यात अयशस्वी", "Failed to save user"),
+      );
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const requestDeleteUser = (u) => {
+    if (!isSuperAdmin) return;
+    setUserToDelete(u);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete?._id) return;
+    try {
+      setDeletingUser(true);
+      await adminApi.deleteUser(userToDelete._id);
+      setSuccess(t("वापरकर्ता हटवला", "User deleted"));
+      setDeleteModalOpen(false);
+      setUserToDelete(null);
+
+      if (users.length === 1 && pagination.page > 1) {
+        setPagination((p) => ({ ...p, page: p.page - 1 }));
+      } else {
+        fetchUsers();
+      }
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          t("वापरकर्ता हटवण्यात अयशस्वी", "Failed to delete user"),
+      );
+    } finally {
+      setDeletingUser(false);
     }
   };
 
@@ -1496,11 +1924,14 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
         <div className="flex items-center gap-4">
           <div className="flex-1 max-w-md">
             <label className="block text-sm font-medium text-slate-600 mb-1">
-              Search Users | वापरकर्ते शोधा
+              {t("वापरकर्ते शोधा", "Search Users")}
             </label>
             <input
               type="text"
-              placeholder="Search by name or mobile..."
+              placeholder={t(
+                "नाव किंवा मोबाईलने शोधा...",
+                "Search by name or mobile...",
+              )}
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -1509,26 +1940,54 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+          {isSuperAdmin && (
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={openCreateUser}
+                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all"
+              >
+                + {t("वापरकर्ता जोडा", "Add User")}
+              </button>
+            </div>
+          )}
           <div className="text-right">
-            <p className="text-sm text-slate-500">Total Users</p>
+            <p className="text-sm text-slate-500">
+              {t("एकूण वापरकर्ते", "Total Users")}
+            </p>
             <p className="text-2xl font-bold text-slate-700">
               {pagination.total}
             </p>
           </div>
         </div>
+        {!isSuperAdmin && (
+          <p className="mt-3 text-sm text-slate-500">
+            {t(
+              "टीप: वापरकर्ता तयार/संपादित/हटवण्यासाठी मुख्य प्रशासक अधिकार आवश्यक आहेत.",
+              "Note: Creating/editing/deleting users requires Superadmin access.",
+            )}
+          </p>
+        )}
       </div>
 
       {/* Users Table */}
       <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
         {loading ? (
-          <LoadingSpinner text="Loading users..." />
+          <LoadingSpinner
+            text={t("वापरकर्ते लोड होत आहेत...", "Loading users...")}
+          />
         ) : users.length === 0 ? (
           <div className="p-16 text-center">
             <div className="text-6xl mb-4">👥</div>
             <h3 className="text-xl font-semibold text-slate-700 mb-2">
-              No Users Found
+              {t("वापरकर्ते सापडले नाहीत", "No Users Found")}
             </h3>
-            <p className="text-slate-500">कोणताही वापरकर्ता आढळला नाही</p>
+            <p className="text-slate-500">
+              {t(
+                "कोणताही वापरकर्ता आढळला नाही",
+                "No users matched your search",
+              )}
+            </p>
           </div>
         ) : (
           <>
@@ -1583,7 +2042,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                               {u.fullName}
                             </p>
                             <p className="text-xs text-slate-400">
-                              {u.email || "No email"}
+                              {u.email || t("ईमेल नाही", "No email")}
                             </p>
                           </div>
                         </div>
@@ -1593,7 +2052,8 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                       </td>
                       <td className="px-6 py-4">
                         <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-sm">
-                          {u.corporation?.name || "N/A"}
+                          {localizeName(u.corporation, language) ||
+                            t("लागू नाही", "N/A")}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
@@ -1611,9 +2071,15 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                                   : "bg-slate-100 text-slate-800"
                             }`}
                           >
-                            <option value="user">User</option>
-                            <option value="admin">Admin</option>
-                            <option value="superadmin">Superadmin</option>
+                            <option value="user">
+                              {t("वापरकर्ता", "User")}
+                            </option>
+                            <option value="admin">
+                              {t("प्रशासक", "Admin")}
+                            </option>
+                            <option value="superadmin">
+                              {t("मुख्य प्रशासक", "Superadmin")}
+                            </option>
                           </select>
                         ) : (
                           <span
@@ -1654,6 +2120,36 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                         >
                           {u.isActive ? "Deactivate" : "Activate"}
                         </button>
+
+                        {isSuperAdmin && (
+                          <div className="mt-2 flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditUser(u)}
+                              className="px-3 py-2 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
+                            >
+                              {t("संपादन", "Edit")}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={
+                                String(currentUser?.id) === String(u._id)
+                              }
+                              onClick={() => requestDeleteUser(u)}
+                              className="px-3 py-2 text-xs font-medium rounded-lg bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50"
+                              title={
+                                String(currentUser?.id) === String(u._id)
+                                  ? t(
+                                      "तुमचे स्वतःचे खाते हटवू शकत नाही",
+                                      "You cannot delete your own account",
+                                    )
+                                  : undefined
+                              }
+                            >
+                              {t("हटवा", "Delete")}
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1694,6 +2190,188 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
           </>
         )}
       </div>
+
+      {/* Create/Edit User Modal */}
+      {userModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeUserModal}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4">
+              <h3 className="text-xl font-bold text-white">
+                {editingUser
+                  ? t("वापरकर्ता संपादित करा", "Edit User")
+                  : t("वापरकर्ता जोडा", "Add User")}
+              </h3>
+              <p className="text-indigo-100 text-sm mt-1">
+                {t(
+                  "नाव, मोबाईल आणि महामंडळ आवश्यक आहे.",
+                  "Name, mobile and corporation are required.",
+                )}
+              </p>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("पूर्ण नाव", "Full Name")} *
+                </label>
+                <input
+                  type="text"
+                  value={userForm.fullName}
+                  onChange={(e) =>
+                    setUserForm((f) => ({ ...f, fullName: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("मोबाईल क्रमांक", "Mobile Number")} *
+                </label>
+                <input
+                  type="text"
+                  value={userForm.mobileNumber}
+                  onChange={(e) =>
+                    setUserForm((f) => ({
+                      ...f,
+                      mobileNumber: e.target.value,
+                    }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  placeholder="9XXXXXXXXX"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("महामंडळ", "Corporation")} *
+                </label>
+                <select
+                  value={userForm.corporation}
+                  onChange={(e) =>
+                    setUserForm((f) => ({ ...f, corporation: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  disabled={corpLoading}
+                >
+                  <option value="">{t("निवडा", "Select")}</option>
+                  {corporations.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {localizeName(c, language) || c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!editingUser && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">
+                    {t("भूमिका", "Role")}
+                  </label>
+                  <select
+                    value={userForm.role}
+                    onChange={(e) =>
+                      setUserForm((f) => ({ ...f, role: e.target.value }))
+                    }
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="user">{t("वापरकर्ता", "User")}</option>
+                    <option value="admin">{t("प्रशासक", "Admin")}</option>
+                    <option value="superadmin">
+                      {t("मुख्य प्रशासक", "Superadmin")}
+                    </option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {editingUser
+                    ? t("नवीन पासवर्ड (ऐच्छिक)", "New Password (optional)")
+                    : t("पासवर्ड", "Password")}{" "}
+                  {editingUser ? "" : "*"}
+                </label>
+                <input
+                  type="password"
+                  value={userForm.password}
+                  onChange={(e) =>
+                    setUserForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+                {editingUser && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    {t(
+                      "पासवर्ड रिकामा ठेवल्यास बदलला जाणार नाही.",
+                      "Leave blank to keep the current password.",
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={closeUserModal}
+                disabled={savingUser}
+                className="px-5 py-2.5 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-100 transition-all disabled:opacity-50"
+              >
+                {t("रद्द करा", "Cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveUser}
+                disabled={savingUser || !isSuperAdmin}
+                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg disabled:opacity-50"
+              >
+                {savingUser
+                  ? t("जतन होत आहे...", "Saving...")
+                  : t("जतन करा", "Save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      <ConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          if (deletingUser) return;
+          setDeleteModalOpen(false);
+          setUserToDelete(null);
+        }}
+        onConfirm={handleDeleteUser}
+        title={t("Delete User", "Delete User")}
+        titleMr={t("वापरकर्ता हटवा", "Delete User")}
+        message={
+          userToDelete
+            ? t(
+                `Are you sure you want to delete ${userToDelete.fullName}?`,
+                `Are you sure you want to delete ${userToDelete.fullName}?`,
+              )
+            : t("Are you sure?", "Are you sure?")
+        }
+        messageMr={
+          userToDelete
+            ? t(
+                `${userToDelete.fullName} हा वापरकर्ता हटवायचा?`,
+                `${userToDelete.fullName} हा वापरकर्ता हटवायचा?`,
+              )
+            : t("खात्री आहे का?", "Are you sure?")
+        }
+        confirmText={t("Delete", "Delete")}
+        confirmTextMr={t("हटवा", "Delete")}
+        cancelText={t("Cancel", "Cancel")}
+        cancelTextMr={t("रद्द करा", "Cancel")}
+        type="danger"
+        isLoading={deletingUser}
+      />
     </div>
   );
 }
@@ -1702,6 +2380,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
 // YEARS SECTION
 // ==========================================
 function YearsSection({ setError, setSuccess }) {
+  const { t, language } = useLanguage();
   const [years, setYears] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newYear, setNewYear] = useState("");
@@ -1844,7 +2523,10 @@ function YearsSection({ setError, setSuccess }) {
             isLocked: true,
           });
           setSuccess(
-            "Financial year deactivated & locked | आर्थिक वर्ष निष्क्रिय आणि लॉक केले",
+            t(
+              "आर्थिक वर्ष निष्क्रिय आणि लॉक केले",
+              "Financial year deactivated & locked",
+            ),
           );
           fetchYears();
           closeModal();
@@ -1874,7 +2556,7 @@ function YearsSection({ setError, setSuccess }) {
         try {
           setActionLoading(true);
           await adminApi.deleteFinancialYear(id);
-          setSuccess("Financial year deleted | आर्थिक वर्ष हटवले");
+          setSuccess(t("आर्थिक वर्ष हटवले", "Financial year deleted"));
           fetchYears();
           closeModal();
         } catch (err) {
@@ -1886,7 +2568,12 @@ function YearsSection({ setError, setSuccess }) {
     });
   };
 
-  if (loading) return <LoadingSpinner text="Loading financial years..." />;
+  if (loading)
+    return (
+      <LoadingSpinner
+        text={t("आर्थिक वर्षे लोड होत आहेत...", "Loading financial years...")}
+      />
+    );
 
   return (
     <div className="space-y-6">
@@ -1922,12 +2609,12 @@ function YearsSection({ setError, setSuccess }) {
       {/* Create New Year */}
       <div className="bg-white rounded-2xl shadow-lg p-6">
         <h2 className="text-lg font-bold text-slate-800 mb-4">
-          ➕ Add New Financial Year | नवीन आर्थिक वर्ष
+          {t("➕ नवीन आर्थिक वर्ष", "➕ Add New Financial Year")}
         </h2>
         <form onSubmit={handleCreate} className="flex gap-4 items-end">
           <div className="flex-1 max-w-xs">
             <label className="block text-sm font-medium text-slate-600 mb-1">
-              Year Format: YYYY-YY
+              {t("वर्ष स्वरूप: YYYY-YY", "Year Format: YYYY-YY")}
             </label>
             <input
               type="text"
@@ -1944,7 +2631,9 @@ function YearsSection({ setError, setSuccess }) {
             disabled={creating}
             className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg"
           >
-            {creating ? "Creating..." : "Add Year"}
+            {creating
+              ? t("तयार होत आहे...", "Creating...")
+              : t("वर्ष जोडा", "Add Year")}
           </button>
         </form>
       </div>
@@ -1953,7 +2642,7 @@ function YearsSection({ setError, setSuccess }) {
       <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
         <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700">
           <h2 className="text-lg font-bold text-white">
-            📅 Financial Years | आर्थिक वर्षे
+            {t("📅 आर्थिक वर्षे", "📅 Financial Years")}
           </h2>
         </div>
 
@@ -1961,10 +2650,13 @@ function YearsSection({ setError, setSuccess }) {
           <div className="p-16 text-center">
             <div className="text-6xl mb-4">📅</div>
             <h3 className="text-xl font-semibold text-slate-700 mb-2">
-              No Financial Years
+              {t("आर्थिक वर्षे नाहीत", "No Financial Years")}
             </h3>
             <p className="text-slate-500">
-              Add your first financial year above
+              {t(
+                "वरील फॉर्ममध्ये पहिले आर्थिक वर्ष जोडा",
+                "Add your first financial year above",
+              )}
             </p>
           </div>
         ) : (
@@ -1987,11 +2679,11 @@ function YearsSection({ setError, setSuccess }) {
                       </h3>
                       {year.isActive ? (
                         <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-semibold">
-                          ✓ ACTIVE
+                          {t("✓ सक्रिय", "✓ ACTIVE")}
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 bg-slate-400 text-white text-xs rounded-full font-semibold">
-                          🔒 INACTIVE
+                          {t("🔒 निष्क्रिय", "🔒 INACTIVE")}
                         </span>
                       )}
                     </div>
@@ -2007,14 +2699,14 @@ function YearsSection({ setError, setSuccess }) {
                       onClick={() => handleSetInactive(year._id)}
                       className="px-4 py-2 bg-orange-600 text-white text-sm rounded-xl hover:bg-orange-700 transition-colors"
                     >
-                      ⏸️ Deactivate
+                      {t("⏸️ निष्क्रिय करा", "⏸️ Deactivate")}
                     </button>
                   ) : (
                     <button
                       onClick={() => handleSetActive(year._id)}
                       className="px-4 py-2 bg-green-600 text-white text-sm rounded-xl hover:bg-green-700 transition-colors"
                     >
-                      ✅ Set Active
+                      {t("✅ सक्रिय करा", "✅ Set Active")}
                     </button>
                   )}
                   {!year.isActive && (
@@ -2022,7 +2714,7 @@ function YearsSection({ setError, setSuccess }) {
                       onClick={() => handleDelete(year._id)}
                       className="px-4 py-2 bg-red-100 text-red-700 text-sm rounded-xl hover:bg-red-200 transition-colors"
                     >
-                      🗑️ Delete
+                      {t("🗑️ हटवा", "🗑️ Delete")}
                     </button>
                   )}
                 </div>
@@ -2035,28 +2727,49 @@ function YearsSection({ setError, setSuccess }) {
       {/* Info Box */}
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
         <h3 className="font-bold text-blue-800 mb-3">
-          ℹ️ About Financial Years | आर्थिक वर्षांबद्दल
+          {t("ℹ️ आर्थिक वर्षांबद्दल", "ℹ️ About Financial Years")}
         </h3>
-        <ul className="text-sm text-blue-700 space-y-2">
-          <li>
-            • <strong>Only One Active Year:</strong> Only one financial year can
-            be active at a time. When you activate a new year, the previous
-            active year is automatically deactivated and locked.
-          </li>
-          <li>
-            • <strong>Active Year (सक्रिय वर्ष):</strong> Users can only submit
-            entries for the active year. The active year is automatically
-            unlocked.
-          </li>
-          <li>
-            • <strong>Inactive Year (निष्क्रिय वर्ष):</strong> Inactive years
-            are automatically locked. No entries can be made.
-          </li>
-          <li>
-            • <strong>Delete (हटवा):</strong> Only inactive years with no
-            entries can be deleted.
-          </li>
-        </ul>
+        {language === "mr" ? (
+          <ul className="text-sm text-blue-700 space-y-2">
+            <li>
+              • <strong>फक्त एक सक्रिय वर्ष:</strong> एकावेळी फक्त एकच आर्थिक
+              वर्ष सक्रिय असू शकते. नवीन वर्ष सक्रिय केल्यावर मागील सक्रिय वर्ष
+              आपोआप निष्क्रिय आणि लॉक होते.
+            </li>
+            <li>
+              • <strong>सक्रिय वर्ष:</strong> वापरकर्ते फक्त सक्रिय वर्षासाठीच
+              नोंदी सबमिट करू शकतात. सक्रिय वर्ष आपोआप अनलॉक असते.
+            </li>
+            <li>
+              • <strong>निष्क्रिय वर्ष:</strong> निष्क्रिय वर्षे आपोआप लॉक
+              असतात. नवीन नोंदी करता येत नाहीत.
+            </li>
+            <li>
+              • <strong>हटवा:</strong> फक्त निष्क्रिय आणि नोंदी नसलेली वर्षेच
+              हटवता येतात.
+            </li>
+          </ul>
+        ) : (
+          <ul className="text-sm text-blue-700 space-y-2">
+            <li>
+              • <strong>Only One Active Year:</strong> Only one financial year
+              can be active at a time. Activating a new year automatically
+              deactivates and locks the previous one.
+            </li>
+            <li>
+              • <strong>Active Year:</strong> Users can submit entries only for
+              the active year. The active year is automatically unlocked.
+            </li>
+            <li>
+              • <strong>Inactive Year:</strong> Inactive years are automatically
+              locked. No new entries can be made.
+            </li>
+            <li>
+              • <strong>Delete:</strong> Only inactive years with no entries can
+              be deleted.
+            </li>
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -2065,14 +2778,216 @@ function YearsSection({ setError, setSuccess }) {
 // ==========================================
 // SETTINGS SECTION
 // ==========================================
-function SettingsSection() {
+function SettingsSection({ isSuperAdmin, setError, setSuccess }) {
+  const { t, language } = useLanguage();
+  const [corporations, setCorporations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [toast, setToast] = useState({
+    isVisible: false,
+    type: "success",
+    title: "",
+    titleMr: "",
+    message: "",
+    messageMr: "",
+    icon: "",
+    key: 0,
+  });
+
+  const [corpModalOpen, setCorpModalOpen] = useState(false);
+  const [editingCorp, setEditingCorp] = useState(null);
+  const [corpName, setCorpName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchCorporations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchCorporations = async () => {
+    try {
+      setLoading(true);
+      // Use dropdown-data since it's already present in older backend builds.
+      // This avoids hard dependency on the newer /api/admin/corporations endpoint.
+      const { data } = await adminApi.getDropdownData();
+      setCorporations(
+        Array.isArray(data.data?.corporations) ? data.data.corporations : [],
+      );
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          t("महामंडळे लोड करण्यात अयशस्वी", "Failed to load corporations"),
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openRename = (c) => {
+    if (!isSuperAdmin) return;
+    setEditingCorp(c);
+    setCorpName(c?.name || "");
+    setCorpModalOpen(true);
+  };
+
+  const closeRename = (opts = {}) => {
+    const { force = false } = opts;
+    if (saving && !force) return;
+    setCorpModalOpen(false);
+    setEditingCorp(null);
+    setCorpName("");
+  };
+
+  const saveRename = async () => {
+    if (!editingCorp?._id) return;
+    const nextName = corpName.trim();
+    if (!nextName) {
+      setError(t("महामंडळ नाव आवश्यक आहे", "Corporation name is required"));
+      return;
+    }
+    try {
+      setSaving(true);
+      try {
+        await adminApi.updateCorporation(editingCorp._id, { name: nextName });
+      } catch (e) {
+        // If backend hasn't been restarted yet, the new admin endpoint may not exist (404).
+        // Fall back to existing /api/corporations/:id PUT so the feature works immediately.
+        const status = e?.response?.status;
+        if (status === 404) {
+          await corporationApi.update(editingCorp._id, { name: nextName });
+        } else {
+          throw e;
+        }
+      }
+      await fetchCorporations();
+
+      setToast({
+        isVisible: true,
+        type: "success",
+        title: "Updated!",
+        titleMr: "अपडेट झाले!",
+        message: `Corporation renamed to ${nextName}`,
+        messageMr: `महामंडळाचे नाव ${nextName} असे केले`,
+        icon: "✅",
+        key: Date.now(),
+      });
+
+      setTimeout(() => {
+        setToast((prev) => ({ ...prev, isVisible: false }));
+      }, 2100);
+
+      setSuccess(t("महामंडळ नाव अपडेट केले", "Corporation name updated"));
+      closeRename({ force: true });
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          t("महामंडळ अपडेट करण्यात अयशस्वी", "Failed to update corporation"),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-        <div className="text-6xl mb-6">⚙️</div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Settings</h2>
-        <p className="text-slate-500 mb-4">सेटिंग्ज पृष्ठ लवकरच येत आहे</p>
-        <p className="text-slate-400">Coming Soon</p>
+      <AutoToast
+        key={toast.key}
+        isVisible={toast.isVisible}
+        type={toast.type}
+        title={toast.title}
+        titleMr={toast.titleMr}
+        message={toast.message}
+        messageMr={toast.messageMr}
+        icon={toast.icon}
+        duration={2000}
+      />
+
+      {/* Corporation Management */}
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">
+              {t("महामंडळ व्यवस्थापन", "Corporation Management")}
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {t(
+                "येथे महामंडळांचे नाव बदलू शकता.",
+                "You can rename corporations here.",
+              )}
+            </p>
+          </div>
+          {!isSuperAdmin && (
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-100 text-amber-800">
+              {t("फक्त मुख्य प्रशासक", "Superadmin only")}
+            </span>
+          )}
+        </div>
+
+        {loading ? (
+          <LoadingSpinner text={t("महामंडळे लोड होत आहेत...", "Loading...")} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-slate-800 to-slate-700">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">
+                    {t("महामंडळ", "Corporation")}
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">
+                    {t("कोड", "Code")}
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-white uppercase">
+                    {t("स्थिती", "Status")}
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-white uppercase">
+                    {t("क्रिया", "Actions")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {corporations.map((c) => (
+                  <tr
+                    key={c._id}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-slate-700">
+                        {localizeName(c, language) || c.name}
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        {t("ID:", "ID:")} {c._id}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-600">{c.code}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span
+                        className={`px-3 py-1.5 text-xs rounded-full font-semibold ${
+                          c.isActive
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {c.isActive
+                          ? t("सक्रिय", "Active")
+                          : t("निष्क्रिय", "Inactive")}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        type="button"
+                        disabled={!isSuperAdmin}
+                        onClick={() => openRename(c)}
+                        className="px-4 py-2 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+                      >
+                        {t("नाव बदला", "Rename")}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* System Info */}
@@ -2087,6 +3002,62 @@ function SettingsSection() {
           <InfoItem label="Organization" value="बांधकाम कामगार विभाग" />
         </div>
       </div>
+
+      {/* Rename Corporation Modal */}
+      {corpModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeRename}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4">
+              <h3 className="text-xl font-bold text-white">
+                {t("महामंडळ नाव बदला", "Rename Corporation")}
+              </h3>
+              <p className="text-indigo-100 text-sm mt-1">
+                {editingCorp?.code
+                  ? `${t("कोड", "Code")}: ${editingCorp.code}`
+                  : ""}
+              </p>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("नवीन नाव", "New Name")} *
+                </label>
+                <input
+                  type="text"
+                  value={corpName}
+                  onChange={(e) => setCorpName(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  disabled={!isSuperAdmin}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={closeRename}
+                disabled={saving}
+                className="px-5 py-2.5 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-100 transition-all disabled:opacity-50"
+              >
+                {t("रद्द करा", "Cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={saveRename}
+                disabled={saving || !isSuperAdmin}
+                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg disabled:opacity-50"
+              >
+                {saving
+                  ? t("जतन होत आहे...", "Saving...")
+                  : t("जतन करा", "Save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2096,10 +3067,12 @@ function SettingsSection() {
 // ==========================================
 function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
   const isEdit = !!entry;
+  const { t, language } = useLanguage();
   const [formData, setFormData] = useState({
     corporation: entry?.corporation?._id || "",
     region: entry?.region?._id || "",
     circle: entry?.circle?._id || "",
+    division: entry?.division?._id || "",
     kraYear: entry?.kraYear || "",
     achievementDate: entry?.achievementDate
       ? new Date(entry.achievementDate).toISOString().split("T")[0]
@@ -2132,6 +3105,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
   const [saving, setSaving] = useState(false);
   const [filteredRegions, setFilteredRegions] = useState([]);
   const [filteredCircles, setFilteredCircles] = useState([]);
+  const [divisions, setDivisions] = useState([]);
 
   const selectedCorporation = dropdownData?.corporations?.find(
     (c) => c._id === formData.corporation,
@@ -2161,8 +3135,34 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
   }, [formData.region, dropdownData]);
 
   useEffect(() => {
-    if (!needsRegionCircle && (formData.region || formData.circle)) {
-      setFormData((prev) => ({ ...prev, region: "", circle: "" }));
+    const fetchDivisions = async () => {
+      if (!needsRegionCircle || !formData.circle) {
+        setDivisions([]);
+        return;
+      }
+
+      try {
+        const res = await divisionApi.getByCircle(formData.circle);
+        setDivisions(Array.isArray(res.data?.data) ? res.data.data : []);
+      } catch (err) {
+        setDivisions([]);
+      }
+    };
+
+    fetchDivisions();
+  }, [needsRegionCircle, formData.circle]);
+
+  useEffect(() => {
+    if (
+      !needsRegionCircle &&
+      (formData.region || formData.circle || formData.division)
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        region: "",
+        circle: "",
+        division: "",
+      }));
     }
   }, [needsRegionCircle]);
 
@@ -2171,10 +3171,18 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
     setFormData((prev) => ({ ...prev, [name]: value }));
 
     if (name === "corporation") {
-      setFormData((prev) => ({ ...prev, region: "", circle: "" }));
+      setFormData((prev) => ({
+        ...prev,
+        region: "",
+        circle: "",
+        division: "",
+      }));
     }
     if (name === "region") {
-      setFormData((prev) => ({ ...prev, circle: "" }));
+      setFormData((prev) => ({ ...prev, circle: "", division: "" }));
+    }
+    if (name === "circle") {
+      setFormData((prev) => ({ ...prev, division: "" }));
     }
   };
 
@@ -2191,8 +3199,16 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
 
     try {
       setSaving(true);
-      if (needsRegionCircle && (!formData.region || !formData.circle)) {
-        setError("Please select Region and Circle");
+      if (
+        needsRegionCircle &&
+        (!formData.region || !formData.circle || !formData.division)
+      ) {
+        setError(
+          t(
+            "कृपया विभाग, वर्तुळ आणि Division निवडा",
+            "Please select Region, Circle and Division",
+          ),
+        );
         return;
       }
 
@@ -2207,6 +3223,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
 
       if (!payload.region) delete payload.region;
       if (!payload.circle) delete payload.circle;
+      if (!payload.division) delete payload.division;
 
       if (isEdit) {
         await adminApi.updateEntry(entry._id, payload);
@@ -2237,8 +3254,8 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
         <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl flex items-center justify-between">
           <h2 className="text-xl font-bold text-white">
             {isEdit
-              ? "✏️ Edit Entry | नोंद संपादित करा"
-              : "➕ New Entry | नवीन नोंद"}
+              ? t("✏️ नोंद संपादित करा", "✏️ Edit Entry")
+              : t("➕ नवीन नोंद", "➕ New Entry")}
           </h2>
           <button
             onClick={onClose}
@@ -2253,7 +3270,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {/* Corporation */}
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Corporation | महामंडळ *
+                {t("महामंडळ", "Corporation")} *
               </label>
               <select
                 name="corporation"
@@ -2262,10 +3279,12 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
                 required
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="">Select Corporation</option>
+                <option value="">
+                  {t("महामंडळ निवडा", "Select Corporation")}
+                </option>
                 {dropdownData?.corporations?.map((c) => (
                   <option key={c._id} value={c._id}>
-                    {c.name} ({c.code})
+                    {localizeName(c, language)} ({c.code})
                   </option>
                 ))}
               </select>
@@ -2274,7 +3293,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {/* Financial Year */}
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Financial Year | आर्थिक वर्ष *
+                {t("आर्थिक वर्ष", "Financial Year")} *
               </label>
               <select
                 name="kraYear"
@@ -2283,7 +3302,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
                 required
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="">Select Year</option>
+                <option value="">{t("वर्ष निवडा", "Select Year")}</option>
                 {dropdownData?.financialYears?.map((y) => (
                   <option key={y._id} value={y.year}>
                     {y.year}
@@ -2296,7 +3315,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {needsRegionCircle && (
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Region | विभाग *
+                  {t("विभाग", "Region")} *
                 </label>
                 <select
                   name="region"
@@ -2306,10 +3325,10 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
                   disabled={!formData.corporation}
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="">Select Region</option>
+                  <option value="">{t("विभाग निवडा", "Select Region")}</option>
                   {filteredRegions.map((r) => (
                     <option key={r._id} value={r._id}>
-                      {r.name}
+                      {localizeName(r, language)}
                     </option>
                   ))}
                 </select>
@@ -2320,7 +3339,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {needsRegionCircle && (
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Circle | वर्तुळ *
+                  {t("वर्तुळ", "Circle")} *
                 </label>
                 <select
                   name="circle"
@@ -2330,10 +3349,36 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
                   disabled={!formData.region}
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="">Select Circle</option>
+                  <option value="">{t("वर्तुळ निवडा", "Select Circle")}</option>
                   {filteredCircles.map((c) => (
                     <option key={c._id} value={c._id}>
-                      {c.name}
+                      {localizeName(c, language)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Division */}
+            {needsRegionCircle && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("Division", "Division")} *
+                </label>
+                <select
+                  name="division"
+                  value={formData.division}
+                  onChange={handleChange}
+                  required
+                  disabled={!formData.circle}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">
+                    {t("Division निवडा", "Select Division")}
+                  </option>
+                  {divisions.map((d) => (
+                    <option key={d._id} value={d._id}>
+                      {d.name}
                     </option>
                   ))}
                 </select>
@@ -2343,7 +3388,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {/* Achievement Date */}
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Achievement Date | तारीख *
+                {t("तारीख", "Achievement Date")} *
               </label>
               <input
                 type="date"
@@ -2359,16 +3404,20 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             <div className="md:col-span-2">
               <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 bg-gradient-to-r from-slate-800 to-slate-700 text-white font-semibold">
-                  KRA Monthly Submission | 7 KRA Entry
+                  {t("KRA मासिक सबमिशन", "KRA Monthly Submission")}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-white">
                       <tr className="text-left text-slate-600">
                         <th className="px-4 py-2">KRA</th>
-                        <th className="px-4 py-2">Name</th>
-                        <th className="px-4 py-2 text-right">Annual Target</th>
-                        <th className="px-4 py-2 text-right">Achievement</th>
+                        <th className="px-4 py-2">{t("नाव", "Name")}</th>
+                        <th className="px-4 py-2 text-right">
+                          {t("वार्षिक लक्ष्य", "Annual Target")}
+                        </th>
+                        <th className="px-4 py-2 text-right">
+                          {t("साध्य", "Achievement")}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
@@ -2426,7 +3475,10 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
                   </table>
                 </div>
                 <div className="px-4 py-3 bg-white border-t border-slate-200 text-xs text-slate-500">
-                  Note: Unfilled KRAs will be stored as 0.
+                  {t(
+                    "टीप: न भरलेले KRA 0 म्हणून साठवले जातील.",
+                    "Note: Unfilled KRAs will be stored as 0.",
+                  )}
                 </div>
               </div>
             </div>
@@ -2434,7 +3486,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {/* Contact Number */}
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Contact Number | संपर्क क्रमांक *
+                {t("संपर्क क्रमांक", "Contact Number")} *
               </label>
               <input
                 type="tel"
@@ -2443,7 +3495,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
                 onChange={handleChange}
                 required
                 pattern="[6-9]\d{9}"
-                placeholder="10-digit mobile"
+                placeholder={t("10 अंकी मोबाईल", "10-digit mobile")}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -2451,7 +3503,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
             {/* Remarks */}
             <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Remarks | टिप्पणी
+                {t("टिप्पणी", "Remarks")}
               </label>
               <textarea
                 name="remarks"
@@ -2470,7 +3522,7 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
               onClick={onClose}
               className="px-6 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
             >
-              Cancel | रद्द करा
+              {t("रद्द करा", "Cancel")}
             </button>
             <button
               type="submit"
@@ -2478,10 +3530,10 @@ function EntryModal({ entry, dropdownData, onClose, onSave, setError }) {
               className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all shadow-lg"
             >
               {saving
-                ? "Saving..."
+                ? t("जतन होत आहे...", "Saving...")
                 : isEdit
-                  ? "Update | अद्यतनित करा"
-                  : "Create | तयार करा"}
+                  ? t("अद्यतनित करा", "Update")
+                  : t("तयार करा", "Create")}
             </button>
           </div>
         </form>

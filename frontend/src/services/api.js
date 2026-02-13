@@ -42,7 +42,8 @@ api.interceptors.response.use(
 // Corporation API
 export const corporationApi = {
   getAll: () => api.get('/corporations'),
-  getById: (id) => api.get(`/corporations/${id}`)
+  getById: (id) => api.get(`/corporations/${id}`),
+  update: (id, data) => api.put(`/corporations/${id}`, data)
 };
 
 // Region API
@@ -55,6 +56,12 @@ export const regionApi = {
 export const circleApi = {
   getAll: () => api.get('/circles'),
   getByRegion: (regionId) => api.get(`/circles/by-region/${regionId}`)
+};
+
+// Division API
+export const divisionApi = {
+  getAll: () => api.get('/divisions'),
+  getByCircle: (circleId) => api.get(`/divisions/by-circle/${circleId}`)
 };
 
 // KRA API
@@ -134,8 +141,15 @@ export const adminApi = {
     const queryString = new URLSearchParams(params).toString();
     return api.get(`/admin/users${queryString ? `?${queryString}` : ''}`);
   },
+  createUser: (data) => api.post('/admin/users', data),
+  updateUser: (id, data) => api.put(`/admin/users/${id}`, data),
+  deleteUser: (id) => api.delete(`/admin/users/${id}`),
   updateUserRole: (id, role) => api.put(`/admin/users/${id}/role`, { role }),
-  toggleUserStatus: (id) => api.put(`/admin/users/${id}/status`)
+  toggleUserStatus: (id) => api.put(`/admin/users/${id}/status`),
+
+  // Corporation Management
+  getCorporations: () => api.get('/admin/corporations'),
+  updateCorporation: (id, data) => api.put(`/admin/corporations/${id}`, data)
 };
 
 // Financial Year API (public endpoint for regular users)

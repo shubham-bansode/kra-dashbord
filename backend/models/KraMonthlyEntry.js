@@ -51,6 +51,11 @@ const kraMonthlyEntrySchema = new mongoose.Schema(
       ref: 'Circle',
       default: null
     },
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      default: null
+    },
 
     // KRA year (financial year string, e.g. 2024-2025)
     kraYear: {
@@ -132,6 +137,7 @@ kraMonthlyEntrySchema.index(
     corporation: 1,
     region: 1,
     circle: 1,
+    division: 1,
     achievementMonth: 1,
     achievementYear: 1
   },
@@ -165,6 +171,7 @@ kraMonthlyEntrySchema.statics.checkDuplicate = async function (entryData) {
   // region/circle can be null
   query.region = entryData.region || null;
   query.circle = entryData.circle || null;
+  query.division = entryData.division || null;
 
   return this.findOne(query);
 };

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const { body, validationResult, param, query } = require('express-validator');
+const bcrypt = require('bcryptjs');
 const { adminAuth, superadminAuth } = require('../middleware/adminAuth');
 const auth = require('../middleware/auth');
 
@@ -14,6 +15,11 @@ const Region = require('../models/Region');
 const Circle = require('../models/Circle');
 const Kra = require('../models/Kra');
 const { getAllKras } = require('../config/kraMaster');
+const {
+  getAllowedCorporationNames,
+  isAllowedRegionName,
+  isAllowedCircleName
+} = require('../config/googleFormHierarchy');
 
 // ==========================================
 // FINANCIAL YEAR MANAGEMENT
@@ -257,6 +263,7 @@ router.get('/entries',
         corporation,
         region,
         circle,
+        division,
         kraYear,
         kra,
         search,
@@ -269,6 +276,7 @@ router.get('/entries',
       if (corporation) filter.corporation = corporation;
       if (region) filter.region = region;
       if (circle) filter.circle = circle;
+      if (division) filter.division = division;
       if (kraYear) filter.kraYear = kraYear;
       // Back-compat: frontend uses query param "kra". In config-based schema, we filter by kraId.
       if (kra) {
@@ -298,6 +306,7 @@ router.get('/entries',
           .populate('corporation', 'name code')
           .populate('region', 'name')
           .populate('circle', 'name')
+          .populate('division', 'name')
           .sort(sortOptions)
           .skip(skip)
           .limit(parseInt(limit)),
@@ -335,7 +344,8 @@ router.get('/entries/:id',
       const entry = await KraMonthlyEntry.findById(req.params.id)
         .populate('corporation', 'name code')
         .populate('region', 'name')
-        .populate('circle', 'name');
+        .populate('circle', 'name')
+        .populate('division', 'name');
 
       if (!entry) {
         return res.status(404).json({
@@ -404,6 +414,7 @@ router.post('/entries',
         corporation: req.body.corporation,
         region: req.body.region || null,
         circle: req.body.circle || null,
+        division: req.body.division || null,
         achievementDate: req.body.achievementDate
       });
 
@@ -418,6 +429,7 @@ router.post('/entries',
         corporation: req.body.corporation,
         region: req.body.region || null,
         circle: req.body.circle || null,
+        division: req.body.division || null,
         kraYear: req.body.kraYear,
         achievementDate: req.body.achievementDate,
         kras,
@@ -431,7 +443,8 @@ router.post('/entries',
       const populated = await KraMonthlyEntry.findById(entry._id)
         .populate('corporation', 'name code')
         .populate('region', 'name')
-        .populate('circle', 'name');
+        .populate('circle', 'name')
+        .populate('division', 'name');
 
       res.status(201).json({
         success: true,
@@ -501,6 +514,7 @@ router.put('/entries/:id',
         corporation: updates.corporation,
         region: updates.region || null,
         circle: updates.circle || null,
+        division: updates.division || null,
         kraYear: updates.kraYear,
         achievementDate: updates.achievementDate,
         kras,
@@ -517,7 +531,8 @@ router.put('/entries/:id',
       )
         .populate('corporation', 'name code')
         .populate('region', 'name')
-        .populate('circle', 'name');
+        .populate('circle', 'name')
+        .populate('division', 'name');
 
       if (!entry) {
         return res.status(404).json({
@@ -777,6 +792,213 @@ router.put('/users/:id/status',
   }
 );
 
+// POST /api/admin/users - Create a new user (superadmin)
+router.post(
+  '/users',
+  superadminAuth,
+  [
+    body('corporation').notEmpty().withMessage('Corporation is required').isMongoId().withMessage('Invalid Corporation ID'),
+    body('fullName').notEmpty().withMessage('Full name is required').isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
+    body('mobileNumber').notEmpty().withMessage('Mobile number is required').matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
+    body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('role').optional().isIn(['user', 'admin', 'superadmin']).withMessage('Invalid role')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const { corporation, fullName, mobileNumber, password, role } = req.body;
+
+      const corp = await Corporation.findById(corporation);
+      if (!corp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid corporation selected'
+        });
+      }
+
+      const existing = await User.findOne({ mobileNumber });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: 'Mobile number already registered'
+        });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const user = await User.create({
+        corporation,
+        fullName,
+        mobileNumber,
+        passwordHash,
+        role: role || 'user'
+      });
+
+      const populated = await User.findById(user._id)
+        .select('-passwordHash')
+        .populate('corporation', 'name code');
+
+      return res.status(201).json({
+        success: true,
+        message: 'User created successfully',
+        data: populated
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error creating user',
+        error: error.message
+      });
+    }
+  }
+);
+
+// PUT /api/admin/users/:id - Update user details (superadmin)
+router.put(
+  '/users/:id',
+  superadminAuth,
+  [
+    param('id').isMongoId().withMessage('Invalid ID'),
+    body('corporation').optional().isMongoId().withMessage('Invalid Corporation ID'),
+    body('fullName').optional().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
+    body('mobileNumber').optional().matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
+    body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('role').not().exists().withMessage('Use /users/:id/role to update role'),
+    body('isActive').not().exists().withMessage('Use /users/:id/status to update status')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const { id } = req.params;
+      const updates = {};
+
+      if (typeof req.body.fullName === 'string') updates.fullName = req.body.fullName;
+      if (typeof req.body.mobileNumber === 'string') updates.mobileNumber = req.body.mobileNumber;
+      if (typeof req.body.corporation === 'string') updates.corporation = req.body.corporation;
+
+      if (req.body.password) {
+        updates.passwordHash = await bcrypt.hash(req.body.password, 10);
+      }
+
+      if (updates.mobileNumber) {
+        const existing = await User.findOne({ mobileNumber: updates.mobileNumber, _id: { $ne: id } });
+        if (existing) {
+          return res.status(409).json({
+            success: false,
+            message: 'Mobile number already registered'
+          });
+        }
+      }
+
+      if (updates.corporation) {
+        const corp = await Corporation.findById(updates.corporation);
+        if (!corp) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid corporation selected'
+          });
+        }
+      }
+
+      const user = await User.findByIdAndUpdate(id, updates, { new: true, runValidators: true })
+        .select('-passwordHash')
+        .populate('corporation', 'name code');
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'User updated successfully',
+        data: user
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error updating user',
+        error: error.message
+      });
+    }
+  }
+);
+
+// DELETE /api/admin/users/:id - Delete user (superadmin)
+router.delete(
+  '/users/:id',
+  superadminAuth,
+  [param('id').isMongoId().withMessage('Invalid ID')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const { id } = req.params;
+      if (String(req.user.userId) === String(id)) {
+        return res.status(400).json({
+          success: false,
+          message: 'You cannot delete your own account'
+        });
+      }
+
+      const user = await User.findById(id).select('role');
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      if (user.role === 'superadmin') {
+        const superadminCount = await User.countDocuments({ role: 'superadmin', isActive: true });
+        if (superadminCount <= 1) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot delete the last active superadmin'
+          });
+        }
+      }
+
+      await User.findByIdAndDelete(id);
+
+      return res.json({
+        success: true,
+        message: 'User deleted successfully'
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error deleting user',
+        error: error.message
+      });
+    }
+  }
+);
+
 // ==========================================
 // STATISTICS & OVERVIEW
 // ==========================================
@@ -856,23 +1078,110 @@ router.get('/stats', adminAuth, async (req, res) => {
 // DROPDOWN DATA (for forms)
 // ==========================================
 
+// ==========================================
+// CORPORATION MANAGEMENT
+// ==========================================
+
+// GET /api/admin/corporations - List corporations (admin)
+router.get('/corporations', adminAuth, async (req, res) => {
+  try {
+    const corporations = await Corporation.find().sort({ name: 1 });
+    return res.json({
+      success: true,
+      data: corporations
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching corporations',
+      error: error.message
+    });
+  }
+});
+
+// PUT /api/admin/corporations/:id - Rename corporation (superadmin)
+router.put(
+  '/corporations/:id',
+  superadminAuth,
+  [
+    param('id').isMongoId().withMessage('Invalid ID'),
+    body('name').notEmpty().withMessage('Corporation name is required').isLength({ min: 2 }).withMessage('Corporation name must be at least 2 characters')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const { id } = req.params;
+      const name = String(req.body.name || '').trim();
+
+      const existing = await Corporation.findOne({ name, _id: { $ne: id } });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: 'Corporation with this name already exists'
+        });
+      }
+
+      const updated = await Corporation.findByIdAndUpdate(
+        id,
+        { name },
+        { new: true, runValidators: true }
+      );
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: 'Corporation not found'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Corporation updated successfully',
+        data: updated
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error updating corporation',
+        error: error.message
+      });
+    }
+  }
+);
+
 // GET /api/admin/dropdown-data - Get all dropdown data for forms
 router.get('/dropdown-data', adminAuth, async (req, res) => {
   try {
     const [corporations, regions, circles, kras, financialYears] = await Promise.all([
       Corporation.find().select('name code hasRegions').sort('name'),
       Region.find().populate('corporation', 'name code').sort('name'),
-      Circle.find().populate('region', 'name').sort('name'),
+      Circle.find()
+        .populate('region', '_id name')
+        .populate('corporation', 'name code')
+        .sort('name'),
       Kra.find().sort('kraNumber'),
       FinancialYear.find().sort({ startDate: -1 })
     ]);
 
+    const allowedCorporations = new Set(getAllowedCorporationNames());
+    const filteredCorporations = corporations.filter((c) => allowedCorporations.has(String(c?.name || '').trim()));
+    const filteredRegions = regions.filter((r) => isAllowedRegionName(r?.corporation?.name, r?.name));
+    const filteredCircles = circles.filter((c) => isAllowedCircleName(c?.corporation?.name, c?.region?.name, c?.name));
+
     res.json({
       success: true,
       data: {
-        corporations,
-        regions,
-        circles,
+        corporations: filteredCorporations,
+        regions: filteredRegions,
+        circles: filteredCircles,
         kras,
         financialYears
       }

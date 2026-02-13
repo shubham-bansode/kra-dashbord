@@ -73,8 +73,8 @@ financialYearSchema.statics.generateFromYear = function(yearStr) {
   return {
     year: `${startYear}-${endYearShort}`,
     displayName: `आर्थिक वर्ष ${startYear}-${endYearShort} | FY ${startYear}-${endYearShort}`,
-    startDate: new Date(startYear, 3, 1), // April 1st
-    endDate: new Date(endYear, 2, 31, 23, 59, 59) // March 31st
+    startDate: new Date(startYear, 5, 1), // June 1st
+    endDate: new Date(endYear, 4, 31, 23, 59, 59) // May 31st
   };
 };
 

@@ -8,6 +8,15 @@ yarn-error.log*
 .env
 .env.local
 
+# Python / local venv (do not commit)
+.venv/
+__pycache__/
+*.py
+*.ipynb
+
+# Excel source data (do not commit)
+XL/
+
 # Build
 dist/
 build/
