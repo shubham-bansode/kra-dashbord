@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api';
+// Allow overriding API base URL via env for deployments where frontend and backend are on different hosts.
+// In local development, default to backend on port 5000 so API calls work even without a proxy.
+// Examples:
+// - VITE_API_URL=http://localhost:5000/api
+// - VITE_API_URL=https://your-domain.com/api
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -66,7 +73,9 @@ export const kraEntryApi = {
   create: (data) => api.post('/kra-entries', data),
   update: (id, data) => api.put(`/kra-entries/${id}`, data),
   delete: (id) => api.delete(`/kra-entries/${id}`),
-  checkDuplicate: (data) => api.post('/kra-entries/check-duplicate', data)
+  checkDuplicate: (data) => api.post('/kra-entries/check-duplicate', data),
+  // NEW: Bulk submission with upsert logic
+  bulkCreate: (entries) => api.post('/kra-entries/bulk', { entries })
 };
 
 // Auth API
@@ -74,6 +83,64 @@ export const authApi = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
   me: () => api.get('/auth/me')
+};
+
+// Dashboard API
+export const dashboardApi = {
+  getSummary: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/summary${params ? `?${params}` : ''}`);
+  },
+  getByCorporation: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/by-corporation${params ? `?${params}` : ''}`);
+  },
+  getByKra: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/by-kra${params ? `?${params}` : ''}`);
+  },
+  getMonthlyTrend: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/monthly-trend${params ? `?${params}` : ''}`);
+  }
+};
+
+// Admin API
+export const adminApi = {
+  // Statistics
+  getStats: () => api.get('/admin/stats'),
+  getDropdownData: () => api.get('/admin/dropdown-data'),
+
+  // Financial Years
+  getFinancialYears: () => api.get('/admin/financial-years'),
+  getActiveFinancialYear: () => api.get('/admin/financial-years/active'),
+  createFinancialYear: (data) => api.post('/admin/financial-years', data),
+  updateFinancialYear: (id, data) => api.put(`/admin/financial-years/${id}`, data),
+  deleteFinancialYear: (id) => api.delete(`/admin/financial-years/${id}`),
+
+  // Entries Management
+  getEntries: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return api.get(`/admin/entries${queryString ? `?${queryString}` : ''}`);
+  },
+  getEntry: (id) => api.get(`/admin/entries/${id}`),
+  createEntry: (data) => api.post('/admin/entries', data),
+  updateEntry: (id, data) => api.put(`/admin/entries/${id}`, data),
+  deleteEntry: (id) => api.delete(`/admin/entries/${id}`),
+  bulkDeleteEntries: (ids) => api.delete('/admin/entries', { data: { ids } }),
+
+  // User Management
+  getUsers: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return api.get(`/admin/users${queryString ? `?${queryString}` : ''}`);
+  },
+  updateUserRole: (id, role) => api.put(`/admin/users/${id}/role`, { role }),
+  toggleUserStatus: (id) => api.put(`/admin/users/${id}/status`)
+};
+
+// Financial Year API (public endpoint for regular users)
+export const financialYearApi = {
+  getActive: () => api.get('/admin/financial-years/active')
 };
 
 export default api;

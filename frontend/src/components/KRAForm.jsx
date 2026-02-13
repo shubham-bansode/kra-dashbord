@@ -1,25 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   corporationApi,
   regionApi,
   circleApi,
-  kraApi,
   kraEntryApi,
+  financialYearApi,
 } from "../services/api";
 import {
   generateKraYears,
   getMarathiMonths,
   isDateInFinancialYear,
   isValidMobileNumber,
-  isValidNumber,
   parseFinancialYear,
 } from "../utils/helpers";
 import { useAuth } from "../auth/AuthContext";
 
-// Icons
+// Import KRA configuration from centralized config file
+import { getActiveKraConfig, getKrasForConfig } from "../config/kraConfig";
+
+// ============================================================================
+// ICONS
+// ============================================================================
 const ErrorIcon = () => (
   <svg
-    className="w-4 h-4 flex-shrink-0 mt-0.5"
+    className="w-4 h-4 flex-shrink-0"
     fill="currentColor"
     viewBox="0 0 20 20"
   >
@@ -44,7 +48,6 @@ const SuccessIcon = () => (
 const LoadingSpinner = ({ size = "h-5 w-5" }) => (
   <svg
     className={`animate-spin ${size} text-white`}
-    xmlns="http://www.w3.org/2000/svg"
     fill="none"
     viewBox="0 0 24 24"
   >
@@ -55,12 +58,12 @@ const LoadingSpinner = ({ size = "h-5 w-5" }) => (
       r="10"
       stroke="currentColor"
       strokeWidth="4"
-    ></circle>
+    />
     <path
       className="opacity-75"
       fill="currentColor"
       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-    ></path>
+    />
   </svg>
 );
 
@@ -78,8 +81,20 @@ const InfoIcon = () => (
   </svg>
 );
 
-const SectionIcon = ({ children }) => (
-  <span className="bg-white/20 p-1.5 rounded-lg">{children}</span>
+const TableIcon = () => (
+  <svg
+    className="w-5 h-5"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+    />
+  </svg>
 );
 
 const OrgIcon = () => (
@@ -94,22 +109,6 @@ const OrgIcon = () => (
       strokeLinejoin="round"
       strokeWidth={2}
       d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-    />
-  </svg>
-);
-
-const KRAIcon = () => (
-  <svg
-    className="w-5 h-5"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
     />
   </svg>
 );
@@ -130,6 +129,13 @@ const ContactIcon = () => (
   </svg>
 );
 
+const SectionIcon = ({ children }) => (
+  <span className="bg-white/20 p-1.5 rounded-lg">{children}</span>
+);
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 const KRAForm = () => {
   const { user } = useAuth();
   const userCorporationId = user?.corporation?._id || user?.corporation || "";
@@ -141,9 +147,10 @@ const KRAForm = () => {
   const [corporations, setCorporations] = useState([]);
   const [regions, setRegions] = useState([]);
   const [circles, setCircles] = useState([]);
-  const [kras, setKras] = useState([]);
   const [kraYears] = useState(generateKraYears());
   const [months] = useState(getMarathiMonths());
+  const [activeFinancialYear, setActiveFinancialYear] = useState(null);
+  const [isYearLocked, setIsYearLocked] = useState(false);
 
   // Form Data State
   const [formData, setFormData] = useState({
@@ -152,33 +159,77 @@ const KRAForm = () => {
     circle: "",
     kraYear: "",
     kraMonth: "",
-    kra: "",
-    annualTarget: "",
     achievementDate: "",
-    kraAchievement: "",
     remarks: "",
     contactNumber: "",
   });
+
+  // KRA Table Data - stores target and achievement for each KRA
+  const [kraTableData, setKraTableData] = useState({});
 
   // UI States
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitInFlightRef = useRef(false);
   const [submitStatus, setSubmitStatus] = useState({ type: "", message: "" });
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successSummary, setSuccessSummary] = useState("");
   const [selectedCorporation, setSelectedCorporation] = useState(null);
+  const [selectedRegion, setSelectedRegion] = useState(null);
+
+  // KRA selection flow - show all 7 KRAs at once
+  const [selectedKraIds, setSelectedKraIds] = useState([]);
+
+  // Get active KRA configuration based on selection
+  const activeConfig = useMemo(() => {
+    const corpName = selectedCorporation?.name;
+    const regionName = selectedRegion?.name;
+    return getActiveKraConfig(corpName, regionName);
+  }, [selectedCorporation, selectedRegion]);
+
+  // Get KRAs to display based on config and selected year
+  const displayKras = useMemo(() => {
+    return getKrasForConfig(activeConfig, formData.kraYear);
+  }, [activeConfig, formData.kraYear]);
+
+  // Only show selected KRAs for validation (no longer used for table display)
+  const selectedDisplayKras = useMemo(() => {
+    if (selectedKraIds.length === 0) return [];
+    const selectedSet = new Set(selectedKraIds);
+    return displayKras.filter((kra) => selectedSet.has(kra.id));
+  }, [displayKras, selectedKraIds]);
+
+  // Note: Weightage is intentionally not displayed on frontend UI.
 
   // Fetch initial data
   useEffect(() => {
     const fetchMasterData = async () => {
       setIsLoading(true);
       try {
-        const [corpRes, kraRes] = await Promise.all([
+        const [corpRes, fyRes] = await Promise.all([
           corporationApi.getAll(),
-          kraApi.getAll(),
+          financialYearApi.getActive().catch(() => null),
         ]);
+
         setCorporations(corpRes.data.data);
-        setKras(kraRes.data.data);
+
+        // Set active financial year from admin settings
+        if (fyRes?.data?.data) {
+          const activeFY = fyRes.data.data;
+          setActiveFinancialYear(activeFY);
+          setIsYearLocked(activeFY.isLocked === true);
+          // Auto-set the financial year
+          setFormData((prev) => ({
+            ...prev,
+            kraYear: activeFY.year,
+          }));
+        } else {
+          // No active financial year found
+          setActiveFinancialYear(null);
+          setIsYearLocked(true); // Lock if no active year
+        }
       } catch (error) {
         console.error("Error fetching master data:", error);
         setSubmitStatus({
@@ -193,6 +244,15 @@ const KRAForm = () => {
 
     fetchMasterData();
   }, []);
+
+  // Keep KRA selection consistent when available KRAs change (corp/region/year config)
+  useEffect(() => {
+    setSelectedKraIds((prev) => {
+      const available = new Set(displayKras.map((k) => k.id));
+      const next = prev.filter((id) => available.has(id));
+      return next;
+    });
+  }, [displayKras]);
 
   // Pre-fill locked user fields
   useEffect(() => {
@@ -218,6 +278,7 @@ const KRAForm = () => {
       if (!formData.corporation) {
         setRegions([]);
         setCircles([]);
+        setSelectedCorporation(null);
         return;
       }
 
@@ -235,6 +296,7 @@ const KRAForm = () => {
         setRegions([]);
       }
       setCircles([]);
+      setSelectedRegion(null);
     };
 
     fetchRegions();
@@ -245,8 +307,12 @@ const KRAForm = () => {
     const fetchCircles = async () => {
       if (!formData.region) {
         setCircles([]);
+        setSelectedRegion(null);
         return;
       }
+
+      const region = regions.find((r) => r._id === formData.region);
+      setSelectedRegion(region);
 
       try {
         const res = await circleApi.getByRegion(formData.region);
@@ -257,9 +323,32 @@ const KRAForm = () => {
     };
 
     fetchCircles();
-  }, [formData.region]);
+  }, [formData.region, regions]);
 
-  // Validation function
+  // Reset KRA table data when config changes
+  useEffect(() => {
+    const newTableData = {};
+    displayKras.forEach((kra) => {
+      newTableData[kra.id] = kraTableData[kra.id] || {
+        target: "",
+        achievement: "",
+      };
+    });
+    setKraTableData(newTableData);
+  }, [displayKras]);
+
+  // Handle KRA table data change
+  const handleKraTableChange = (kraId, field, value) => {
+    setKraTableData((prev) => ({
+      ...prev,
+      [kraId]: {
+        ...prev[kraId],
+        [field]: value,
+      },
+    }));
+  };
+
+  // Validation
   const validateField = useCallback(
     (name, value) => {
       let error = "";
@@ -272,15 +361,13 @@ const KRAForm = () => {
 
         case "region":
           if (selectedCorporation?.hasRegions && !value) {
-            error =
-              "प्रादेशिक नाव निवडणे आवश्यक आहे | Region is required for MKVDC";
+            error = "प्रादेशिक नाव निवडणे आवश्यक आहे | Region is required";
           }
           break;
 
         case "circle":
           if (selectedCorporation?.hasRegions && !value) {
-            error =
-              "वर्तुळ नाव निवडणे आवश्यक आहे | Circle is required for MKVDC";
+            error = "वर्तुळ नाव निवडणे आवश्यक आहे | Circle is required";
           }
           break;
 
@@ -291,22 +378,6 @@ const KRAForm = () => {
 
         case "kraMonth":
           if (!value) error = "महिना निवडणे आवश्यक आहे | Month is required";
-          break;
-
-        case "kra":
-          if (!value)
-            error = "KRA नाव निवडणे आवश्यक आहे | KRA Name is required";
-          break;
-
-        case "annualTarget":
-          if (!value) {
-            error = "वार्षिक लक्ष्य आवश्यक आहे | Annual Target is required";
-          } else if (!isValidNumber(value)) {
-            error =
-              "कृपया वैध संख्या प्रविष्ट करा | Please enter a valid number";
-          } else if (parseFloat(value) < 0) {
-            error = "मूल्य नकारात्मक असू शकत नाही | Value cannot be negative";
-          }
           break;
 
         case "achievementDate":
@@ -321,23 +392,11 @@ const KRAForm = () => {
           }
           break;
 
-        case "kraAchievement":
-          if (!value) {
-            error = "KRA उपलब्धी आवश्यक आहे | KRA Achievement is required";
-          } else if (!isValidNumber(value)) {
-            error =
-              "कृपया वैध संख्या प्रविष्ट करा | Please enter a valid number";
-          } else if (parseFloat(value) < 0) {
-            error = "मूल्य नकारात्मक असू शकत नाही | Value cannot be negative";
-          }
-          break;
-
         case "contactNumber":
           if (!value) {
             error = "संपर्क क्रमांक आवश्यक आहे | Contact Number is required";
           } else if (!isValidMobileNumber(value)) {
-            error =
-              "कृपया वैध 10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा | Please enter a valid 10-digit Indian mobile number";
+            error = "कृपया वैध 10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा";
           }
           break;
 
@@ -350,6 +409,47 @@ const KRAForm = () => {
     [selectedCorporation, formData.kraYear],
   );
 
+  // Validate KRA table
+  const validateKraTable = useCallback(() => {
+    const errors = {};
+
+    if (!formData.achievementDate) {
+      errors.kraSelection =
+        "कृपया प्रथम तारीख निवडा | Please select date first";
+      return errors;
+    }
+
+    if (selectedKraIds.length === 0) {
+      errors.selectedKras =
+        "कृपया किमान एक KRA निवडा | Please select at least one KRA";
+      return errors;
+    }
+
+    // Validate ONLY selected KRAs. Unselected KRAs will be submitted as 0.
+    selectedDisplayKras.forEach((kra) => {
+      const data = kraTableData[kra.id];
+      if (!data?.target) {
+        errors[`kra_${kra.id}_target`] = "वार्षिक उद्दिष्ट आवश्यक आहे";
+      }
+      if (!data?.achievement) {
+        errors[`kra_${kra.id}_achievement`] = "साध्य आवश्यक आहे";
+      }
+      if (data?.target && parseFloat(data.target) < 0) {
+        errors[`kra_${kra.id}_target`] = "मूल्य नकारात्मक असू शकत नाही";
+      }
+      if (data?.achievement && parseFloat(data.achievement) < 0) {
+        errors[`kra_${kra.id}_achievement`] = "मूल्य नकारात्मक असू शकत नाही";
+      }
+    });
+
+    return errors;
+  }, [
+    formData.achievementDate,
+    selectedKraIds,
+    selectedDisplayKras,
+    kraTableData,
+  ]);
+
   // Validate all fields
   const validateForm = useCallback(() => {
     const newErrors = {};
@@ -359,41 +459,60 @@ const KRAForm = () => {
       if (error) newErrors[field] = error;
     });
 
+    const kraErrors = validateKraTable();
+    Object.assign(newErrors, kraErrors);
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [formData, validateField]);
+  }, [formData, validateField, validateKraTable]);
+
+  const toggleKraSelection = (kraId) => {
+    setSelectedKraIds((prev) => {
+      const exists = prev.includes(kraId);
+      if (exists) return prev.filter((id) => id !== kraId);
+      return [...prev, kraId];
+    });
+  };
 
   // Handle input change
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Reset dependent fields when parent changes
     let updatedFormData = { ...formData, [name]: value };
 
     if (name === "corporation") {
       updatedFormData.region = "";
       updatedFormData.circle = "";
+      setSelectedKraIds([]);
     } else if (name === "region") {
       updatedFormData.circle = "";
-    } else if (name === "kraYear") {
-      // Re-validate date when year changes
-      if (formData.achievementDate) {
-        const dateError = validateField(
-          "achievementDate",
-          formData.achievementDate,
-        );
-        if (dateError) {
-          setErrors((prev) => ({ ...prev, achievementDate: dateError }));
-        }
-      }
+      setSelectedKraIds([]);
+    } else if (name === "achievementDate" && value) {
+      // Auto-fill month based on selected date
+      const selectedDate = new Date(value);
+      const month = selectedDate.getMonth() + 1; // getMonth() returns 0-11, so add 1
+      updatedFormData.kraMonth = month.toString();
+
+      // Reset selection when date changes
+      setSelectedKraIds([]);
+    } else if (name === "achievementDate" && !value) {
+      // Reset selection when date cleared
+      setSelectedKraIds([]);
     }
 
     setFormData(updatedFormData);
 
-    // Validate field if touched
     if (touched[name]) {
       const error = validateField(name, value);
       setErrors((prev) => ({ ...prev, [name]: error }));
+    }
+
+    // Also validate and clear error for auto-filled month
+    if (name === "achievementDate" && value && touched.kraMonth) {
+      const selectedDate = new Date(value);
+      const month = selectedDate.getMonth() + 1;
+      const monthError = validateField("kraMonth", month.toString());
+      setErrors((prev) => ({ ...prev, kraMonth: monthError }));
     }
   };
 
@@ -407,49 +526,86 @@ const KRAForm = () => {
 
   // Check if form is valid
   const isFormValid = useCallback(() => {
-    // Check required fields
     const requiredFields = [
       "corporation",
       "kraYear",
       "kraMonth",
-      "kra",
-      "annualTarget",
       "achievementDate",
-      "kraAchievement",
       "contactNumber",
     ];
 
-    // Add region/circle if corporation has regions
     if (selectedCorporation?.hasRegions) {
       requiredFields.push("region", "circle");
     }
 
-    // Check all required fields have values
     for (const field of requiredFields) {
       if (!formData[field]) return false;
     }
 
-    // Check no errors
+    // Must select at least one KRA
+    if (selectedKraIds.length === 0) return false;
+
+    // All selected KRAs must have target + achievement
+    const allSelectedHaveData = selectedDisplayKras.every((kra) => {
+      const data = kraTableData[kra.id];
+      return data?.target && data?.achievement;
+    });
+    if (!allSelectedHaveData) return false;
+
     return Object.values(errors).every((error) => !error);
-  }, [formData, errors, selectedCorporation]);
+  }, [
+    formData,
+    errors,
+    selectedCorporation,
+    selectedKraIds,
+    selectedDisplayKras,
+    kraTableData,
+  ]);
 
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Mark all fields as touched
+    // Prevent double-click / double-submit before React disables the button.
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
+    const releaseSubmitGuard = () => {
+      submitInFlightRef.current = false;
+    };
+
+    // Check if year is locked
+    if (isYearLocked) {
+      releaseSubmitGuard();
+      setSubmitStatus({
+        type: "error",
+        message:
+          "हे आर्थिक वर्ष लॉक केले आहे. नवीन नोंदी स्वीकारल्या जात नाहीत. | This financial year is locked. No new entries allowed.",
+      });
+      return;
+    }
+
+    // Check if there's an active financial year
+    if (!activeFinancialYear) {
+      releaseSubmitGuard();
+      setSubmitStatus({
+        type: "error",
+        message:
+          "कोणतेही सक्रिय आर्थिक वर्ष नाही. कृपया प्रशासकाशी संपर्क साधा. | No active financial year. Please contact administrator.",
+      });
+      return;
+    }
+
     const allTouched = {};
     Object.keys(formData).forEach((key) => {
       allTouched[key] = true;
     });
     setTouched(allTouched);
 
-    // Validate form
     if (!validateForm()) {
+      releaseSubmitGuard();
       setSubmitStatus({
         type: "error",
-        message:
-          "कृपया सर्व आवश्यक फील्ड योग्यरित्या भरा | Please fill all required fields correctly",
+        message: "कृपया सर्व आवश्यक फील्ड योग्यरित्या भरा",
       });
       return;
     }
@@ -458,69 +614,112 @@ const KRAForm = () => {
     setSubmitStatus({ type: "", message: "" });
 
     try {
-      // Prepare data for API
-      const submitData = {
-        corporation: userCorporationId || formData.corporation,
-        region: selectedCorporation?.hasRegions ? formData.region : null,
-        circle: selectedCorporation?.hasRegions ? formData.circle : null,
-        kraYear: formData.kraYear,
-        kra: formData.kra,
-        annualTarget: parseFloat(formData.annualTarget),
-        achievementDate: formData.achievementDate,
-        kraAchievement: parseFloat(formData.kraAchievement),
-        remarks: formData.remarks || "",
-        contactNumber: userMobileNumber || formData.contactNumber,
-        submittedBy: userFullName || undefined,
-      };
+      // Prepare ALL KRA entries:
+      // - Selected KRAs use user-entered values
+      // - Unselected KRAs are submitted with 0/0
+      const selectedSet = new Set(selectedKraIds);
+      const kraEntries = displayKras.map((kra) => {
+        const isSelected = selectedSet.has(kra.id);
+        const data = kraTableData[kra.id];
 
-      // Check for duplicate
-      const duplicateCheck = await kraEntryApi.checkDuplicate(submitData);
-      if (duplicateCheck.data.isDuplicate) {
+        const annualTarget = isSelected ? parseFloat(data?.target) : 0;
+        const kraAchievement = isSelected ? parseFloat(data?.achievement) : 0;
+
+        return {
+          corporation: userCorporationId || formData.corporation,
+          region: selectedCorporation?.hasRegions ? formData.region : null,
+          circle: selectedCorporation?.hasRegions ? formData.circle : null,
+          kraYear: formData.kraYear,
+          kraName: kra.displayName,
+          kraId: kra.id,
+          weight: kra.weight,
+          annualTarget: Number.isFinite(annualTarget) ? annualTarget : 0,
+          kraAchievement: Number.isFinite(kraAchievement) ? kraAchievement : 0,
+          achievementDate: formData.achievementDate,
+          remarks: formData.remarks || "",
+          contactNumber: userMobileNumber || formData.contactNumber,
+          submittedBy: userFullName || undefined,
+        };
+      });
+
+      // Use bulk submission - INSERT ONLY
+      // Users can only create new entries. Only admin can update existing entries.
+      const response = await kraEntryApi.bulkCreate(kraEntries);
+      const result = response.data;
+
+      if (result.success) {
+        const successMsg = `${result.summary.inserted} KRA entries यशस्वीरित्या सबमिट केल्या!`;
+        setSuccessSummary(successMsg);
+        setShowSuccessModal(true);
+        setSubmitStatus({
+          type: "success",
+          message: `✅ ${successMsg}`,
+        });
+
+        // Reset KRA table on success
+        const resetTableData = {};
+        displayKras.forEach((kra) => {
+          resetTableData[kra.id] = { target: "", achievement: "" };
+        });
+        setKraTableData(resetTableData);
+        setSelectedKraIds([]);
+      } else {
+        // Handle failure
+        setSubmitStatus({
+          type: "error",
+          message: result.message || "काही entries साठी त्रुटी आली",
+        });
+      }
+    } catch (error) {
+      const errorData = error.response?.data;
+      const statusCode = error.response?.status;
+
+      // Handle route not found (API base mismatch)
+      if (statusCode === 404) {
         setSubmitStatus({
           type: "error",
           message:
-            "या महिन्यासाठी आधीच एंट्री अस्तित्वात आहे | An entry for this month already exists for this combination",
+            "Route not found. कृपया API URL सेटिंग तपासा किंवा प्रशासकाशी संपर्क साधा.",
         });
-        setIsSubmitting(false);
         return;
       }
 
-      // Submit data
-      await kraEntryApi.create(submitData);
+      // Handle DUPLICATE ENTRIES (HTTP 409 Conflict)
+      if (
+        statusCode === 409 &&
+        (errorData?.error === "DUPLICATE_ENTRIES" ||
+          errorData?.error === "DUPLICATE_KEY")
+      ) {
+        setSubmitStatus({
+          type: "error",
+          message:
+            "⚠️ या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. एकदा सबमिट केल्यानंतर फक्त Admin बदल करू शकतात. | A KRA entry already exists for the selected month. Once submitted, only admin can update entries.",
+        });
+        return;
+      }
 
-      setSubmitStatus({
-        type: "success",
-        message:
-          "फॉर्म यशस्वीरित्या सबमिट झाला! | Form submitted successfully!",
-      });
+      // Handle other 409 conflicts
+      if (statusCode === 409) {
+        setSubmitStatus({
+          type: "error",
+          message:
+            errorData?.message ||
+            "या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. फक्त Admin अपडेट करू शकतात.",
+        });
+        return;
+      }
 
-      // Reset form
-      setFormData({
-        corporation: userCorporationId || "",
-        region: "",
-        circle: "",
-        kraYear: "",
-        kraMonth: "",
-        kra: "",
-        annualTarget: "",
-        achievementDate: "",
-        kraAchievement: "",
-        remarks: "",
-        contactNumber: userMobileNumber || "",
-      });
-      setTouched({});
-      setErrors({});
-    } catch (error) {
       const errorMessage =
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        "सबमिट करताना त्रुटी आली | Error submitting form";
+        errorData?.errors?.[0]?.message ||
+        errorData?.message ||
+        "सबमिट करताना त्रुटी आली";
       setSubmitStatus({
         type: "error",
         message: errorMessage,
       });
     } finally {
       setIsSubmitting(false);
+      submitInFlightRef.current = false;
     }
   };
 
@@ -532,13 +731,12 @@ const KRAForm = () => {
       circle: "",
       kraYear: "",
       kraMonth: "",
-      kra: "",
-      annualTarget: "",
       achievementDate: "",
-      kraAchievement: "",
       remarks: "",
       contactNumber: userMobileNumber || "",
     });
+    setKraTableData({});
+    setSelectedKraIds([]);
     setTouched({});
     setErrors({});
     setSubmitStatus({ type: "", message: "" });
@@ -560,9 +758,34 @@ const KRAForm = () => {
     );
   }
 
+  // Success popup modal for clear confirmation
+  const SuccessModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <div className="flex items-center gap-3 mb-3 text-green-600">
+          <SuccessIcon />
+          <h3 className="text-xl font-bold">Submission Successful</h3>
+        </div>
+        <p className="text-gray-700 mb-6">
+          {successSummary || "Entries submitted successfully."}
+        </p>
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            onClick={() => setShowSuccessModal(false)}
+          >
+            ठीक आहे / Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+      {showSuccessModal && <SuccessModal />}
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-gov-blue text-white text-center py-6 rounded-t-lg border-b-4 border-gov-orange">
           <div className="flex items-center justify-center gap-4 mb-3">
@@ -579,39 +802,51 @@ const KRAForm = () => {
             KRA Monitoring Data Entry Form
           </h1>
           <p className="text-lg md:text-xl opacity-90 font-semibold">
-            केआरए निरीक्षण डेटा एंट्री फॉर्म
+            केआरए निरीक्षण डेटा एंट्री फॉर्म (Table Mode)
           </p>
           <p className="text-sm md:text-base mt-2 opacity-80">
             जलसंपदा विभाग, महाराष्ट्र शासन
           </p>
-          <p className="text-xs md:text-sm mt-1 opacity-70">
-            Water Resources Department, Government of Maharashtra
-          </p>
         </div>
 
-        {/* Status Message */}
-        {submitStatus.message && (
-          <div
-            className={`mx-4 mt-4 p-4 rounded-lg flex items-start gap-3 shadow-md ${
-              submitStatus.type === "success"
-                ? "bg-green-50 text-green-800 border-l-4 border-green-500"
-                : "bg-red-50 text-red-800 border-l-4 border-red-500"
-            }`}
-          >
-            <div className="flex-shrink-0 mt-0.5">
-              {submitStatus.type === "success" ? (
-                <SuccessIcon />
-              ) : (
-                <ErrorIcon />
-              )}
-            </div>
-            <div>
-              <p className="font-semibold">{submitStatus.message}</p>
-              {submitStatus.type === "success" && (
-                <p className="text-sm mt-1 opacity-75">
-                  You can submit another entry now.
+        {/* Locked Year Warning */}
+        {isYearLocked && (
+          <div className="mx-4 mt-4 p-4 rounded-lg bg-red-100 border-2 border-red-400 text-red-800 shadow-md">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🔒</span>
+              <div>
+                <h3 className="font-bold text-lg">
+                  आर्थिक वर्ष लॉक केले आहे | Financial Year is Locked
+                </h3>
+                <p className="text-sm mt-1">
+                  {activeFinancialYear
+                    ? `${activeFinancialYear.year} या वर्षासाठी नवीन नोंदी स्वीकारल्या जात नाहीत.`
+                    : "कोणतेही सक्रिय आर्थिक वर्ष नाही. कृपया प्रशासकाशी संपर्क साधा."}
                 </p>
-              )}
+                <p className="text-xs mt-1 opacity-80">
+                  {activeFinancialYear
+                    ? `No new entries are being accepted for ${activeFinancialYear.year}.`
+                    : "No active financial year. Please contact administrator."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* No Active Year Warning */}
+        {!activeFinancialYear && !isYearLocked && (
+          <div className="mx-4 mt-4 p-4 rounded-lg bg-yellow-100 border-2 border-yellow-400 text-yellow-800 shadow-md">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">⚠️</span>
+              <div>
+                <h3 className="font-bold text-lg">
+                  कोणतेही सक्रिय आर्थिक वर्ष नाही | No Active Financial Year
+                </h3>
+                <p className="text-sm mt-1">कृपया प्रशासकाशी संपर्क साधा.</p>
+                <p className="text-xs mt-1 opacity-80">
+                  Please contact the administrator to activate a financial year.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -628,147 +863,147 @@ const KRAForm = () => {
               </SectionIcon>
               संस्थात्मक पदानुक्रम | Organization Hierarchy
             </div>
-            <div className="section-content space-y-6">
-              {/* Corporation */}
-              <div>
-                <label htmlFor="corporation" className="form-label">
-                  महामंडळाचे नाव | Corporation Name
-                  <span className="required-star">*</span>
-                </label>
-                <select
-                  id="corporation"
-                  name="corporation"
-                  value={formData.corporation}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={`form-select ${errors.corporation && touched.corporation ? "input-error" : ""}`}
-                  disabled={isCorporationLocked}
-                >
-                  <option value="">Choose</option>
-                  {corporations.length > 0
-                    ? corporations.map((corp) => (
+            <div className="section-content">
+              <div className="sticky top-0 z-30 -mx-6 md:-mx-8 px-6 md:px-8 py-5 bg-white/95 backdrop-blur border-b border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Corporation */}
+                  <div>
+                    <label htmlFor="corporation" className="form-label">
+                      महामंडळाचे नाव | Corporation Name
+                      <span className="required-star">*</span>
+                    </label>
+                    <select
+                      id="corporation"
+                      name="corporation"
+                      value={formData.corporation}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`form-select ${errors.corporation && touched.corporation ? "input-error" : ""}`}
+                      disabled={isCorporationLocked}
+                    >
+                      <option value="">-- निवडा --</option>
+                      {corporations.map((corp) => (
                         <option key={corp._id} value={corp._id}>
                           {corp.name}
                         </option>
-                      ))
-                    : null}
-                </select>
-                {isCorporationLocked ? (
-                  <p className="field-help">
-                    <InfoIcon />
-                    <span>Logged-in user corporation is locked.</span>
-                  </p>
-                ) : null}
-                {errors.corporation && touched.corporation && (
-                  <p className="form-error">
-                    <ErrorIcon /> {errors.corporation}
-                  </p>
-                )}
+                      ))}
+                    </select>
+                    {errors.corporation && touched.corporation && (
+                      <p className="form-error">
+                        <ErrorIcon /> {errors.corporation}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Region */}
+                  {selectedCorporation?.hasRegions && (
+                    <div>
+                      <label htmlFor="region" className="form-label">
+                        मंडळाचे नाव | Region Name
+                        <span className="required-star">*</span>
+                      </label>
+                      <select
+                        id="region"
+                        name="region"
+                        value={formData.region}
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        className={`form-select ${errors.region && touched.region ? "input-error" : ""}`}
+                        disabled={!formData.corporation}
+                      >
+                        <option value="">-- निवडा --</option>
+                        {regions.map((region) => (
+                          <option key={region._id} value={region._id}>
+                            {region.name}
+                          </option>
+                        ))}
+                      </select>
+                      {errors.region && touched.region && (
+                        <p className="form-error">
+                          <ErrorIcon /> {errors.region}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Circle */}
+                  {selectedCorporation?.hasRegions && (
+                    <div>
+                      <label htmlFor="circle" className="form-label">
+                        वर्तुळ नाव | Circle Name
+                        <span className="required-star">*</span>
+                      </label>
+                      <select
+                        id="circle"
+                        name="circle"
+                        value={formData.circle}
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        className={`form-select ${errors.circle && touched.circle ? "input-error" : ""}`}
+                        disabled={!formData.region}
+                      >
+                        <option value="">-- निवडा --</option>
+                        {circles.map((circle) => (
+                          <option key={circle._id} value={circle._id}>
+                            {circle.name}
+                          </option>
+                        ))}
+                      </select>
+                      {errors.circle && touched.circle && (
+                        <p className="form-error">
+                          <ErrorIcon /> {errors.circle}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Region - Only shown for MKVDC */}
-              {selectedCorporation?.hasRegions && (
-                <div>
-                  <label htmlFor="region" className="form-label">
-                    मंडळाचे नाव | Region Name
-                    <span className="required-star">*</span>
-                  </label>
-                  <select
-                    id="region"
-                    name="region"
-                    value={formData.region}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`form-select ${errors.region && touched.region ? "input-error" : ""}`}
-                    disabled={!formData.corporation}
-                  >
-                    <option value="">Choose</option>
-                    {regions.length > 0 ? (
-                      regions.map((region) => (
-                        <option key={region._id} value={region._id}>
-                          {region.name}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="CEWRD">CE WRD, Pune</option>
-                        <option value="CESP">CE SP, Pune</option>
-                      </>
-                    )}
-                  </select>
-                  {errors.region && touched.region && (
-                    <p className="form-error">
-                      <ErrorIcon /> {errors.region}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Circle - Only shown for MKVDC */}
-              {selectedCorporation?.hasRegions && (
-                <div>
-                  <label htmlFor="circle" className="form-label">
-                    वर्तुळ नाव | Circle Name
-                    <span className="required-star">*</span>
-                  </label>
-                  <select
-                    id="circle"
-                    name="circle"
-                    value={formData.circle}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`form-select ${errors.circle && touched.circle ? "input-error" : ""}`}
-                    disabled={!formData.region}
-                  >
-                    <option value="">-- निवडा | Select --</option>
-                    {circles.map((circle) => (
-                      <option key={circle._id} value={circle._id}>
-                        {circle.name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.circle && touched.circle && (
-                    <p className="form-error">
-                      <ErrorIcon /> {errors.circle}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* KRA Section */}
-          <div className="border-b border-gray-200">
-            <div className="section-header">
-              <SectionIcon>
-                <KRAIcon />
-              </SectionIcon>
-              फलनिष्पत्तीची क्षेत्रे KRA
-            </div>
-            <div className="section-content">
-              {/* Two column grid for desktop */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* KRA Year */}
+              {/* Year, Month, Date */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                 <div>
                   <label htmlFor="kraYear" className="form-label">
                     फलनिष्पत्तीची क्षेत्रे (KRA) वर्ष
                     <span className="required-star">*</span>
+                    {activeFinancialYear && (
+                      <span className="ml-2 text-xs font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                        🔒 System Controlled
+                      </span>
+                    )}
                   </label>
-                  <select
-                    id="kraYear"
-                    name="kraYear"
-                    value={formData.kraYear}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`form-select ${errors.kraYear && touched.kraYear ? "input-error" : ""}`}
-                  >
-                    <option value="">Choose</option>
-                    {kraYears.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
+                  {activeFinancialYear ? (
+                    <>
+                      <input
+                        type="text"
+                        id="kraYear"
+                        name="kraYear"
+                        value={formData.kraYear}
+                        readOnly
+                        className="form-input bg-gray-100 cursor-not-allowed"
+                      />
+                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        <InfoIcon />
+                        आर्थिक वर्ष प्रशासकाद्वारे नियंत्रित | Year controlled
+                        by admin
+                      </p>
+                    </>
+                  ) : (
+                    <select
+                      id="kraYear"
+                      name="kraYear"
+                      value={formData.kraYear}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className={`form-select ${errors.kraYear && touched.kraYear ? "input-error" : ""}`}
+                    >
+                      <option value="">-- निवडा --</option>
+                      {kraYears.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {errors.kraYear && touched.kraYear && (
                     <p className="form-error">
                       <ErrorIcon /> {errors.kraYear}
@@ -776,94 +1011,9 @@ const KRAForm = () => {
                   )}
                 </div>
 
-                {/* Month */}
-                <div>
-                  <label htmlFor="kraMonth" className="form-label">
-                    महिन्याचे साध्य KRA
-                    <span className="required-star">*</span>
-                  </label>
-                  <select
-                    id="kraMonth"
-                    name="kraMonth"
-                    value={formData.kraMonth}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`form-select ${errors.kraMonth && touched.kraMonth ? "input-error" : ""}`}
-                  >
-                    <option value="">Choose</option>
-                    {months.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.kraMonth && touched.kraMonth && (
-                    <p className="form-error">
-                      <ErrorIcon /> {errors.kraMonth}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* KRA Name - Full width */}
-              <div className="mt-6">
-                <label htmlFor="kra" className="form-label">
-                  फलनिष्पत्तीची क्षेत्रे KRA
-                  <span className="required-star">*</span>
-                </label>
-                <select
-                  id="kra"
-                  name="kra"
-                  value={formData.kra}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={`form-select ${errors.kra && touched.kra ? "input-error" : ""}`}
-                >
-                  <option value="">Choose</option>
-                  {kras.map((kra) => (
-                    <option key={kra._id} value={kra._id}>
-                      {kra.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.kra && touched.kra && (
-                  <p className="form-error">
-                    <ErrorIcon /> {errors.kra}
-                  </p>
-                )}
-              </div>
-
-              {/* Annual Target - Full width */}
-              <div className="mt-6">
-                <label htmlFor="annualTarget" className="form-label">
-                  KRA वार्षिक उद्दिष्ट
-                  <span className="required-star">*</span>
-                </label>
-                <input
-                  type="number"
-                  id="annualTarget"
-                  name="annualTarget"
-                  value={formData.annualTarget}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  min="0"
-                  step="any"
-                  placeholder="0"
-                  className={`form-input ${errors.annualTarget && touched.annualTarget ? "input-error" : ""}`}
-                />
-                {errors.annualTarget && touched.annualTarget && (
-                  <p className="form-error">
-                    <ErrorIcon /> {errors.annualTarget}
-                  </p>
-                )}
-              </div>
-
-              {/* Two column grid for date and achievement */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                {/* Achievement Date */}
                 <div>
                   <label htmlFor="achievementDate" className="form-label">
-                    महिन्याचे साध्य KRA (तारीख)
+                    उपलब्धी तारीख | Achievement Date
                     <span className="required-star">*</span>
                   </label>
                   <input
@@ -875,15 +1025,6 @@ const KRAForm = () => {
                     onBlur={handleBlur}
                     className={`form-input ${errors.achievementDate && touched.achievementDate ? "input-error" : ""}`}
                   />
-                  {formData.kraYear && (
-                    <p className="field-help">
-                      <InfoIcon />
-                      <span>
-                        तारीख आर्थिक वर्ष {formData.kraYear} मध्ये असणे आवश्यक
-                        आहे
-                      </span>
-                    </p>
-                  )}
                   {errors.achievementDate && touched.achievementDate && (
                     <p className="form-error">
                       <ErrorIcon /> {errors.achievementDate}
@@ -891,30 +1032,277 @@ const KRAForm = () => {
                   )}
                 </div>
 
-                {/* KRA Achievement */}
                 <div>
-                  <label htmlFor="kraAchievement" className="form-label">
-                    KRA साध्य<span className="required-star">*</span>
+                  <label htmlFor="kraMonth" className="form-label">
+                    महिन्याचे साध्य KRA
+                    <span className="required-star">*</span>
+                    <span className="text-xs text-blue-600 ml-2 font-normal">
+                      (तारीखेवरून स्वयंचलित)
+                    </span>
                   </label>
-                  <input
-                    type="number"
-                    id="kraAchievement"
-                    name="kraAchievement"
-                    value={formData.kraAchievement}
+                  <select
+                    id="kraMonth"
+                    name="kraMonth"
+                    value={formData.kraMonth}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    min="0"
-                    step="any"
-                    placeholder="0"
-                    className={`form-input ${errors.kraAchievement && touched.kraAchievement ? "input-error" : ""}`}
-                  />
-                  {errors.kraAchievement && touched.kraAchievement && (
+                    disabled={true}
+                    className={`form-select bg-gray-100 cursor-not-allowed ${errors.kraMonth && touched.kraMonth ? "input-error" : ""}`}
+                    title="महिना तारीखेवरून स्वयंचलितपणे निवडला जातो"
+                  >
+                    <option value="">-- तारीख निवडा --</option>
+                    {months.map((month) => (
+                      <option key={month.value} value={month.value}>
+                        {month.label} ({month.labelEn})
+                      </option>
+                    ))}
+                  </select>
+                  {!formData.achievementDate && (
+                    <p className="text-xs text-blue-500 mt-1 flex items-center gap-1">
+                      <InfoIcon /> तारीख निवडल्यानंतर महिना आपोआप निवडला जाईल
+                    </p>
+                  )}
+                  {errors.kraMonth && touched.kraMonth && (
                     <p className="form-error">
-                      <ErrorIcon /> {errors.kraAchievement}
+                      <ErrorIcon /> {errors.kraMonth}
                     </p>
                   )}
                 </div>
               </div>
+
+              {/* Instructions for KRA Selection */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+                <p className="text-sm text-blue-800 font-medium mb-2">
+                  📝 सूचना | Instruction:
+                </p>
+                <p className="text-sm text-blue-700">
+                  खाली सर्व KRA दिसतील. ज्या KRA साठी डेटा भरायचा आहे त्या KRA
+                  च्या चेकबॉक्सवर क्लिक करा आणि वार्षिक उद्दिष्ट व साध्य भरा.
+                  <br />
+                  <span className="text-xs mt-1 inline-block">
+                    All KRAs are shown below. Click the checkbox for KRAs you
+                    want to fill data for, then enter annual target and
+                    achievement.
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* KRA Table Section */}
+          <div className="border-b border-gray-200">
+            <div className="section-header">
+              <SectionIcon>
+                <TableIcon />
+              </SectionIcon>
+              फलनिष्पत्तीची क्षेत्रे (KRA) Table
+              {selectedCorporation && (
+                <span className="ml-2 text-sm opacity-80">
+                  ({activeConfig.displayName} - {selectedKraIds.length || 0}/
+                  {displayKras.length} Selected)
+                </span>
+              )}
+            </div>
+            <div className="section-content">
+              {!formData.corporation ? (
+                <div className="text-center py-8 text-gray-500">
+                  <InfoIcon />
+                  <p className="mt-2">कृपया प्रथम महामंडळ निवडा</p>
+                  <p className="text-sm">Please select a corporation first</p>
+                </div>
+              ) : !formData.kraYear ? (
+                <div className="text-center py-8 text-gray-500">
+                  <InfoIcon />
+                  <p className="mt-2">कृपया KRA वर्ष निवडा</p>
+                  <p className="text-sm">Please select KRA Year</p>
+                </div>
+              ) : !formData.achievementDate ? (
+                <div className="text-center py-8 text-gray-500">
+                  <InfoIcon />
+                  <p className="mt-2">कृपया उपलब्धी तारीख निवडा</p>
+                  <p className="text-sm">Please select Achievement Date</p>
+                </div>
+              ) : displayKras.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <InfoIcon />
+                  <p className="mt-2">या कॉन्फिगरेशनसाठी KRA उपलब्ध नाहीत</p>
+                  <p className="text-sm">
+                    No KRAs available for this configuration
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* KRA Table - Show All with Checkboxes */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gov-blue text-white">
+                          <th className="px-4 py-3 text-center font-semibold border-r border-blue-400 w-20">
+                            निवडा
+                          </th>
+                          <th className="px-4 py-3 text-left font-semibold border-r border-blue-400 w-16">
+                            अ.क्र.
+                          </th>
+                          <th className="px-4 py-3 text-left font-semibold border-r border-blue-400 min-w-[300px]">
+                            KRA नाव
+                          </th>
+                          <th className="px-4 py-3 text-center font-semibold border-r border-blue-400 w-36">
+                            KRA वार्षिक उद्दिष्ट
+                          </th>
+                          <th className="px-4 py-3 text-center font-semibold w-36">
+                            KRA साध्य
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayKras.map((kra, index) => {
+                          const isSelected = selectedKraIds.includes(kra.id);
+                          const canSelect = Boolean(formData.achievementDate);
+                          return (
+                            <tr
+                              key={kra.id}
+                              className={`border-b ${
+                                index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                              } ${
+                                isSelected
+                                  ? "hover:bg-blue-50"
+                                  : "hover:bg-gray-100"
+                              } transition-colors`}
+                            >
+                              <td className="px-4 py-3 border-r border-gray-200 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  disabled={!canSelect}
+                                  onChange={() => {
+                                    if (!canSelect) return;
+                                    toggleKraSelection(kra.id);
+                                  }}
+                                  className="w-5 h-5 cursor-pointer accent-gov-blue disabled:cursor-not-allowed"
+                                />
+                              </td>
+                              <td className="px-4 py-3 border-r border-gray-200 text-center font-medium text-gray-600">
+                                {index + 1}
+                              </td>
+                              <td
+                                className={`px-4 py-3 border-r border-gray-200 ${
+                                  canSelect
+                                    ? "cursor-pointer"
+                                    : "cursor-not-allowed"
+                                } select-none`}
+                                title={
+                                  canSelect
+                                    ? "Click KRA name to select/deselect"
+                                    : "Select Achievement Date first"
+                                }
+                                onClick={() => {
+                                  if (!canSelect) return;
+                                  toggleKraSelection(kra.id);
+                                }}
+                              >
+                                <div className="font-bold text-gray-900">
+                                  {kra.displayName}
+                                </div>
+                                <div className="text-xs font-semibold text-gray-700 mt-1">
+                                  Unit: {kra.unit}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 border-r border-gray-200">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  placeholder={
+                                    isSelected ? "Enter target" : "-"
+                                  }
+                                  value={kraTableData[kra.id]?.target || ""}
+                                  onChange={(e) =>
+                                    handleKraTableChange(
+                                      kra.id,
+                                      "target",
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={!isSelected}
+                                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                    !isSelected
+                                      ? "bg-gray-100 cursor-not-allowed opacity-50"
+                                      : errors[`kra_${kra.id}_target`]
+                                        ? "border-red-500"
+                                        : "border-gray-300"
+                                  }`}
+                                />
+                                {errors[`kra_${kra.id}_target`] &&
+                                  isSelected && (
+                                    <p className="text-xs text-red-500 mt-1">
+                                      {errors[`kra_${kra.id}_target`]}
+                                    </p>
+                                  )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  placeholder={
+                                    isSelected ? "Enter achievement" : "-"
+                                  }
+                                  value={
+                                    kraTableData[kra.id]?.achievement || ""
+                                  }
+                                  onChange={(e) =>
+                                    handleKraTableChange(
+                                      kra.id,
+                                      "achievement",
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={!isSelected}
+                                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                    !isSelected
+                                      ? "bg-gray-100 cursor-not-allowed opacity-50"
+                                      : errors[`kra_${kra.id}_achievement`]
+                                        ? "border-red-500"
+                                        : "border-gray-300"
+                                  }`}
+                                />
+                                {errors[`kra_${kra.id}_achievement`] &&
+                                  isSelected && (
+                                    <p className="text-xs text-red-500 mt-1">
+                                      {errors[`kra_${kra.id}_achievement`]}
+                                    </p>
+                                  )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Selection Summary */}
+                  <div className="mt-4 flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                    <p className="text-sm text-gray-600">
+                      निवडलेले KRA:{" "}
+                      <strong className="text-gov-blue">
+                        {selectedKraIds.length}
+                      </strong>{" "}
+                      / {displayKras.length}
+                    </p>
+                    {selectedKraIds.length === 0 && (
+                      <p className="text-sm text-red-500">
+                        ⚠️ कृपया किमान एक KRA निवडा
+                      </p>
+                    )}
+                  </div>
+
+                  {errors.selectedKras && (
+                    <p className="form-error mt-4">
+                      <ErrorIcon /> {errors.selectedKras}
+                    </p>
+                  )}
+                </>
+              )}
 
               {/* Remarks */}
               <div className="mt-6">
@@ -946,67 +1334,85 @@ const KRAForm = () => {
               संपर्क माहिती | Contact Information
             </div>
             <div className="section-content">
-              {userFullName ? (
-                <div className="mb-5">
-                  <label className="form-label" htmlFor="fullName">
-                    Full Name
-                  </label>
-                  <input
-                    id="fullName"
-                    className="form-input"
-                    value={userFullName}
-                    readOnly
-                    disabled
-                  />
-                </div>
-              ) : null}
-
-              <div>
-                <label htmlFor="contactNumber" className="form-label">
-                  मोबाईल क्रमांक | Mobile Number
-                  <span className="required-star">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
-                    +91
-                  </span>
-                  <input
-                    type="tel"
-                    id="contactNumber"
-                    name="contactNumber"
-                    value={formData.contactNumber}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    placeholder="9876543210"
-                    maxLength="10"
-                    className={`form-input pl-14 ${errors.contactNumber && touched.contactNumber ? "input-error" : ""}`}
-                    disabled={Boolean(userMobileNumber)}
-                  />
-                </div>
-                <p className="field-help">
-                  <InfoIcon />
-                  <span>
-                    {userMobileNumber
-                      ? "Logged-in mobile number is used for submission"
-                      : "10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा | Enter 10-digit Indian mobile number"}
-                  </span>
-                </p>
-                {errors.contactNumber && touched.contactNumber && (
-                  <p className="form-error">
-                    <ErrorIcon /> {errors.contactNumber}
-                  </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {userFullName && (
+                  <div>
+                    <label className="form-label">Full Name</label>
+                    <input
+                      className="form-input bg-gray-50"
+                      value={userFullName}
+                      readOnly
+                      disabled
+                    />
+                  </div>
                 )}
+
+                <div>
+                  <label htmlFor="contactNumber" className="form-label">
+                    मोबाईल क्रमांक | Mobile Number
+                    <span className="required-star">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      id="contactNumber"
+                      name="contactNumber"
+                      value={formData.contactNumber}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      placeholder="9876543210"
+                      maxLength="10"
+                      className={`form-input pl-14 ${errors.contactNumber && touched.contactNumber ? "input-error" : ""}`}
+                      disabled={Boolean(userMobileNumber)}
+                    />
+                  </div>
+                  {errors.contactNumber && touched.contactNumber && (
+                    <p className="form-error">
+                      <ErrorIcon /> {errors.contactNumber}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           {/* Form Actions */}
           <div className="px-6 py-8 bg-gradient-to-b from-gray-50 to-gray-100">
+            {/* Status Message (near Submit button) */}
+            {submitStatus.message && (
+              <div
+                className={`mb-5 p-4 rounded-lg flex items-start gap-3 shadow-md ${
+                  submitStatus.type === "success"
+                    ? "bg-green-50 text-green-800 border-l-4 border-green-500"
+                    : "bg-red-50 text-red-800 border-l-4 border-red-500"
+                }`}
+              >
+                <div className="flex-shrink-0 mt-0.5">
+                  {submitStatus.type === "success" ? (
+                    <SuccessIcon />
+                  ) : (
+                    <ErrorIcon />
+                  )}
+                </div>
+                <div>
+                  <p className="font-semibold">{submitStatus.message}</p>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
                 type="submit"
-                disabled={!isFormValid() || isSubmitting}
-                className="btn-primary flex items-center justify-center gap-2 min-w-[220px]"
+                disabled={
+                  !isFormValid() ||
+                  isSubmitting ||
+                  isYearLocked ||
+                  !activeFinancialYear
+                }
+                className={`btn-primary flex items-center justify-center gap-2 min-w-[220px] ${isYearLocked || !activeFinancialYear ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {isSubmitting ? (
                   <>
@@ -1066,16 +1472,14 @@ const KRAForm = () => {
                   <ul className="mt-1 space-y-1 text-blue-600">
                     <li>
                       • <span className="text-red-500 font-bold">*</span>{" "}
-                      चिन्हांकित फील्ड आवश्यक आहेत | Fields marked with * are
-                      mandatory
+                      चिन्हांकित फील्ड आवश्यक आहेत
                     </li>
                     <li>
-                      • प्रत्येक महिन्यासाठी फक्त एक एंट्री अनुमत आहे | Only one
-                      entry allowed per month
+                      • प्रत्येक महामंडळ/विभागासाठी वेगवेगळे KRA असू शकतात
                     </li>
+                    <li>• निवडलेल्या KRA साठीच डेटा भरा</li>
                     <li>
-                      • तारीख निवडलेल्या आर्थिक वर्षात असणे आवश्यक आहे | Date
-                      must be within selected financial year
+                      • वर्षानुसार KRA नाव बदलते (उदा. "सन 2024-25 मध्ये...")
                     </li>
                   </ul>
                 </div>
@@ -1093,10 +1497,6 @@ const KRAForm = () => {
             <p className="text-xs text-gray-400 mt-1">
               Water Resources Department, Government of Maharashtra
             </p>
-            <div className="mt-3 flex items-center justify-center gap-2 text-xs text-gray-400">
-              <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              System Online
-            </div>
           </div>
         </div>
       </div>

@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required']
     },
+    role: {
+      type: String,
+      enum: ['user', 'admin', 'superadmin'],
+      default: 'user'
+    },
     isActive: {
       type: Boolean,
       default: true
@@ -37,5 +42,15 @@ const userSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+// Virtual for checking admin access
+userSchema.virtual('isAdmin').get(function() {
+  return this.role === 'admin' || this.role === 'superadmin';
+});
+
+// Static method to find admins
+userSchema.statics.findAdmins = function() {
+  return this.find({ role: { $in: ['admin', 'superadmin'] }, isActive: true });
+};
 
 module.exports = mongoose.model('User', userSchema);

@@ -1,71 +1,82 @@
 import { Link, Route, Routes } from "react-router-dom";
+import HomePage from "./components/HomePage";
 import KRAForm from "./components/KRAForm";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
+import AuthPage from "./pages/AuthPage";
+import Dashboard from "./pages/Dashboard";
+import AdminPanel from "./pages/AdminPanel";
+import GlobalHeader from "./components/GlobalHeader";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import { useAuth } from "./auth/AuthContext";
 
+// ============================================================================
+// MAIN APP COMPONENT
+// ============================================================================
 function App() {
-  const { token, user, logout } = useAuth();
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-gray-100">
-      {/* Top Banner */}
-      <div className="bg-gov-orange h-1.5"></div>
+      {/* Global Header - Sticky on all pages */}
+      <GlobalHeader />
 
-      <div className="bg-white/80 backdrop-blur border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="font-bold text-gov-blue">
-            KRA Monitoring
-          </Link>
-          <div className="flex items-center gap-3">
-            {token ? (
-              <>
-                <div className="text-sm text-gray-700">
-                  {user?.fullName ? user.fullName : "User"}
-                </div>
-                <button className="btn-secondary py-2 px-4" onClick={logout}>
-                  Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <Link
-                  className="text-sm font-bold text-gov-blue hover:underline"
-                  to="/login"
-                >
-                  Login
-                </Link>
-                <Link
-                  className="text-sm font-bold text-gov-blue hover:underline"
-                  to="/signup"
-                >
-                  Signup
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
+      {/* Main Content - with padding top to account for sticky header */}
       <Routes>
+        <Route path="/" element={<HomePage />} />
         <Route
-          path="/"
+          path="/data-entry"
           element={
             <ProtectedRoute>
               <KRAForm />
             </ProtectedRoute>
           }
         />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/reports" element={<ComingSoon title="Reports" />} />
+        <Route
+          path="/monitoring"
+          element={<ComingSoon title="Flow Monitoring" />}
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AdminPanel />
+            </ProtectedRoute>
+          }
+        />
+        {/* Combined Auth Page for Login/Signup/Admin Login */}
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/signup" element={<AuthPage />} />
+        <Route path="/auth" element={<AuthPage />} />
       </Routes>
-
-      {/* Bottom Banner */}
-      <div className="bg-gov-blue h-1"></div>
     </div>
   );
 }
+
+// ============================================================================
+// COMING SOON COMPONENT
+// ============================================================================
+const ComingSoon = ({ title }) => {
+  return (
+    <div className="min-h-[calc(100vh-250px)] bg-gradient-to-br from-blue-50 to-cyan-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-12 text-center max-w-md">
+        <div className="text-6xl mb-6">🚧</div>
+        <h1 className="text-3xl font-bold text-gray-800 mb-4">{title}</h1>
+        <p className="text-xl text-gray-600 mb-2">लवकरच येत आहे</p>
+        <p className="text-lg text-gray-500 mb-8">Coming Soon</p>
+        <Link
+          to="/"
+          className="inline-block px-8 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl"
+        >
+          मुख्य पृष्ठावर परत या | Go Back Home
+        </Link>
+      </div>
+    </div>
+  );
+};
 
 export default App;

@@ -10,14 +10,20 @@ const auth = require('../middleware/auth');
 const router = express.Router();
 
 function getJwtSecret() {
-  return process.env.JWT_SECRET || 'dev_secret_change_me';
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.warn('⚠️  JWT_SECRET not configured. Using insecure default - NOT FOR PRODUCTION!');
+    return 'dev_secret_change_me_in_production';
+  }
+  return secret;
 }
 
 function signToken(user) {
   return jwt.sign(
     {
       userId: user._id,
-      mobileNumber: user.mobileNumber
+      mobileNumber: user.mobileNumber,
+      role: user.role || 'user'
     },
     getJwtSecret(),
     { expiresIn: '7d' }
@@ -78,7 +84,8 @@ router.post(
             id: populatedUser._id,
             fullName: populatedUser.fullName,
             mobileNumber: populatedUser.mobileNumber,
-            corporation: populatedUser.corporation
+            corporation: populatedUser.corporation,
+            role: populatedUser.role || 'user'
           }
         }
       });
@@ -133,7 +140,8 @@ router.post(
             id: user._id,
             fullName: user.fullName,
             mobileNumber: user.mobileNumber,
-            corporation: user.corporation
+            corporation: user.corporation,
+            role: user.role || 'user'
           }
         }
       });
@@ -161,7 +169,8 @@ router.get('/me', auth, async (req, res) => {
         id: user._id,
         fullName: user.fullName,
         mobileNumber: user.mobileNumber,
-        corporation: user.corporation
+        corporation: user.corporation,
+        role: user.role || 'user'
       }
     });
   } catch (error) {

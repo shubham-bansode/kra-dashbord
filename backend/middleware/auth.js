@@ -1,7 +1,12 @@
 const jwt = require('jsonwebtoken');
 
 function getJwtSecret() {
-  return process.env.JWT_SECRET || 'dev_secret_change_me';
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.warn('⚠️  JWT_SECRET not configured. Using insecure default - NOT FOR PRODUCTION!');
+    return 'dev_secret_change_me_in_production';
+  }
+  return secret;
 }
 
 module.exports = function auth(req, res, next) {

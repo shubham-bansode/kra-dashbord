@@ -3,9 +3,11 @@ export const generateKraYears = () => {
   const currentYear = new Date().getFullYear();
   const years = [];
   
-  // Generate years from 2024-2025 to current year + 2
+  // Generate years from 2024-25 to current year + 2
   for (let year = 2024; year <= currentYear + 2; year++) {
-    years.push(`${year}-${year + 1}`);
+    // Use 2-digit format for end year (e.g., 2024-25)
+    const endYearShort = String(year + 1).slice(-2);
+    years.push(`${year}-${endYearShort}`);
   }
   
   return years; // Chronological order
@@ -34,8 +36,12 @@ export const parseFinancialYear = (kraYear) => {
   if (!kraYear) return null;
   
   const yearParts = kraYear.split('-');
+  if (yearParts.length !== 2) return null;
+  
   const startYear = parseInt(yearParts[0]);
-  const endYear = parseInt(yearParts[1]);
+  // Handle both 2-digit (25) and 4-digit (2025) end year formats
+  const endYearPart = parseInt(yearParts[1]);
+  const endYear = endYearPart < 100 ? Math.floor(startYear / 100) * 100 + endYearPart : endYearPart;
   
   return {
     startYear,

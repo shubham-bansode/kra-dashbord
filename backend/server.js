@@ -5,6 +5,16 @@ require('dotenv').config();
 
 const app = express();
 
+// Validate required environment variables
+if (!process.env.MONGODB_URI) {
+  console.error('❌ MONGODB_URI environment variable is required');
+  process.exit(1);
+}
+
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  WARNING: JWT_SECRET not set. Using default secret is insecure for production!');
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -21,6 +31,8 @@ const circleRoutes = require('./routes/circleRoutes');
 const kraRoutes = require('./routes/kraRoutes');
 const kraEntryRoutes = require('./routes/kraEntryRoutes');
 const authRoutes = require('./routes/authRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 app.use('/api/corporations', corporationRoutes);
 app.use('/api/regions', regionRoutes);
@@ -28,6 +40,8 @@ app.use('/api/circles', circleRoutes);
 app.use('/api/kras', kraRoutes);
 app.use('/api/kra-entries', kraEntryRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
