@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Kra = require('../models/Kra');
+const { adminAuth } = require('../middleware/adminAuth');
 
 // GET all KRAs
 router.get('/', async (req, res) => {
@@ -48,7 +49,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create KRA
-router.post('/', async (req, res) => {
+router.post('/', adminAuth, async (req, res) => {
   try {
     const kra = await Kra.create(req.body);
     
@@ -59,9 +60,20 @@ router.post('/', async (req, res) => {
     });
   } catch (error) {
     if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'name';
+      const msg = field === 'kraNumber'
+        ? 'KRA with this number already exists'
+        : 'KRA with this name already exists';
       return res.status(400).json({
         success: false,
-        message: 'KRA with this name already exists'
+        message: msg
+      });
+    }
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
       });
     }
     res.status(500).json({
@@ -73,7 +85,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT update KRA
-router.put('/:id', async (req, res) => {
+router.put('/:id', adminAuth, async (req, res) => {
   try {
     const kra = await Kra.findByIdAndUpdate(
       req.params.id,
@@ -94,6 +106,23 @@ router.put('/:id', async (req, res) => {
       data: kra
     });
   } catch (error) {
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'name';
+      const msg = field === 'kraNumber'
+        ? 'KRA with this number already exists'
+        : 'KRA with this name already exists';
+      return res.status(400).json({
+        success: false,
+        message: msg
+      });
+    }
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error updating KRA',
@@ -103,7 +132,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE KRA (soft delete)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', adminAuth, async (req, res) => {
   try {
     const kra = await Kra.findByIdAndUpdate(
       req.params.id,

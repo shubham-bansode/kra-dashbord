@@ -1,6 +1,15 @@
 const mongoose = require('mongoose');
 
 const kraSchema = new mongoose.Schema({
+  // KRA number used for ordering/identity in master KRA list.
+  // Optional for backward compatibility with existing DBs, but should be set.
+  kraNumber: {
+    type: Number,
+    min: 1,
+    unique: true,
+    sparse: true,
+    index: true
+  },
   name: {
     type: String,
     required: [true, 'KRA name is required'],

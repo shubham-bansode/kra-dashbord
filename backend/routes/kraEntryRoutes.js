@@ -8,7 +8,7 @@ const Kra = require('../models/Kra');
 const Division = require('../models/Division');
 const Circle = require('../models/Circle');
 const auth = require('../middleware/auth');
-const { getAllKras } = require('../config/kraMaster');
+const { getAllKrasAsync } = require('../config/kraMaster');
 const Region = require('../models/Region');
 const {
   isAllowedRegionName,
@@ -316,7 +316,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
     }
 
     // Build a full 7-KRA payload (all zeros by default)
-    const baseKras = getAllKras(req.body.kraYear);
+    const baseKras = await getAllKrasAsync(req.body.kraYear);
     const requestKras = Array.isArray(req.body.kras) ? req.body.kras : [];
     const requestMap = new Map(requestKras.map((k) => [Number(k.kraId), k]));
 
@@ -424,7 +424,7 @@ router.put('/:id', auth, validateSubmission, validateDateYearMatch, async (req, 
     }
     
     // Rebuild a full 7-KRA payload (backend-controlled names/weights)
-    const baseKras = getAllKras(req.body.kraYear);
+    const baseKras = await getAllKrasAsync(req.body.kraYear);
     const requestKras = Array.isArray(req.body.kras) ? req.body.kras : [];
     const requestMap = new Map(requestKras.map((k) => [Number(k.kraId), k]));
 
@@ -661,7 +661,7 @@ router.post('/bulk', auth, async (req, res) => {
     }
 
     // Build full 7-KRA array. If any missing, fill 0.
-    const baseKras = getAllKras(kraYear);
+    const baseKras = await getAllKrasAsync(kraYear);
     const requestMap = new Map(entries.map((e) => [Number(e.kraId), e]));
 
     const kras = baseKras.map((k) => {

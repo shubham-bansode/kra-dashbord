@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { adminApi, corporationApi, divisionApi } from "../services/api";
+import { adminApi, corporationApi, divisionApi, kraApi } from "../services/api";
 import { useLanguage } from "../i18n/LanguageContext";
 import { localizeName } from "../utils/localize";
 
@@ -37,6 +37,7 @@ const SIDEBAR_ITEMS = [
     labelMr: "आर्थिक वर्षे",
     icon: "📅",
   },
+  { id: "kras", label: "KRAs", labelMr: "KRA", icon: "📌" },
   { id: "settings", label: "Settings", labelMr: "सेटिंग्ज", icon: "⚙️" },
 ];
 
@@ -70,8 +71,8 @@ const MONTHS_EN = {
   12: "Dec",
 };
 
-// KRA options with proper names
-const KRA_OPTIONS = [
+// Default KRA options (fallback when API is unavailable)
+const DEFAULT_KRA_OPTIONS = [
   {
     id: 1,
     name: "KRA 1 - प्रत्यक्ष सिंचन (लक्ष हेक्टर)",
@@ -108,6 +109,25 @@ const KRA_OPTIONS = [
     nameEn: "KRA 7 - Residual project completion (Count)",
   },
 ];
+
+const mapKraDocToOption = (kraDoc) => {
+  const number =
+    Number(kraDoc?.kraNumber) || Number(kraDoc?.sortOrder) || undefined;
+  const id = Number.isFinite(number) ? number : undefined;
+
+  const mrName = String(kraDoc?.name || "").trim();
+  const enName = String(kraDoc?.nameEnglish || "").trim();
+
+  const baseMr = mrName || enName || "KRA";
+  const baseEn = enName || mrName || "KRA";
+
+  return {
+    id,
+    _id: kraDoc?._id,
+    name: id ? `KRA ${id} - ${baseMr}` : baseMr,
+    nameEn: id ? `KRA ${id} - ${baseEn}` : baseEn,
+  };
+};
 
 // ==========================================
 // CONFIRM MODAL COMPONENT
@@ -382,9 +402,31 @@ export default function AdminPanel() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [kraOptions, setKraOptions] = useState(DEFAULT_KRA_OPTIONS);
 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const isSuperAdmin = user?.role === "superadmin";
+
+  // Load master KRAs for filters & displays
+  useEffect(() => {
+    const loadKras = async () => {
+      try {
+        const res = await kraApi.getAll();
+        const data = Array.isArray(res?.data?.data) ? res.data.data : [];
+
+        const options = data
+          .map(mapKraDocToOption)
+          .filter((o) => Number.isFinite(Number(o.id)))
+          .sort((a, b) => Number(a.id) - Number(b.id));
+
+        setKraOptions(options.length > 0 ? options : DEFAULT_KRA_OPTIONS);
+      } catch {
+        setKraOptions(DEFAULT_KRA_OPTIONS);
+      }
+    };
+
+    loadKras();
+  }, []);
 
   // Auto-hide notifications
   useEffect(() => {
@@ -569,7 +611,11 @@ export default function AdminPanel() {
             <DashboardSection setError={setError} />
           )}
           {activeSection === "entries" && (
-            <EntriesSection setError={setError} setSuccess={setSuccess} />
+            <EntriesSection
+              kraOptions={kraOptions}
+              setError={setError}
+              setSuccess={setSuccess}
+            />
           )}
           {activeSection === "users" && (
             <UsersSection
@@ -580,6 +626,29 @@ export default function AdminPanel() {
           )}
           {activeSection === "years" && (
             <YearsSection setError={setError} setSuccess={setSuccess} />
+          )}
+          {activeSection === "kras" && (
+            <KrasSection
+              setError={setError}
+              setSuccess={setSuccess}
+              onKrasChanged={async () => {
+                try {
+                  const res = await kraApi.getAll();
+                  const data = Array.isArray(res?.data?.data)
+                    ? res.data.data
+                    : [];
+                  const options = data
+                    .map(mapKraDocToOption)
+                    .filter((o) => Number.isFinite(Number(o.id)))
+                    .sort((a, b) => Number(a.id) - Number(b.id));
+                  setKraOptions(
+                    options.length > 0 ? options : DEFAULT_KRA_OPTIONS,
+                  );
+                } catch {
+                  setKraOptions(DEFAULT_KRA_OPTIONS);
+                }
+              }}
+            />
           )}
           {activeSection === "settings" && (
             <SettingsSection
@@ -887,8 +956,12 @@ function DashboardSection({ setError }) {
 // ==========================================
 // ENTRIES SECTION (All User Entries with CRUD)
 // ==========================================
-function EntriesSection({ setError, setSuccess }) {
+function EntriesSection({ kraOptions, setError, setSuccess }) {
   const { t, language } = useLanguage();
+  const effectiveKraOptions =
+    Array.isArray(kraOptions) && kraOptions.length > 0
+      ? kraOptions
+      : DEFAULT_KRA_OPTIONS;
   const [entries, setEntries] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
@@ -1250,7 +1323,7 @@ function EntriesSection({ setError, setSuccess }) {
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
             >
               <option value="">{t("सर्व KRA", "All KRAs")}</option>
-              {KRA_OPTIONS.map((k) => (
+              {effectiveKraOptions.map((k) => (
                 <option key={k.id} value={k.id}>
                   {localizeName(k, language)}
                 </option>
@@ -1613,7 +1686,9 @@ function ViewEntryModal({ entry, onClose }) {
                 </thead>
                 <tbody className="divide-y divide-indigo-100">
                   {(Array.isArray(entry.kras) ? entry.kras : []).map((k) => {
-                    const kraOption = KRA_OPTIONS.find((o) => o.id === k.kraId);
+                    const kraOption = effectiveKraOptions.find(
+                      (o) => o.id === k.kraId,
+                    );
                     const displayName = kraOption
                       ? localizeName(kraOption, language)
                       : k.kraName;
@@ -2771,6 +2846,403 @@ function YearsSection({ setError, setSuccess }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+// ==========================================
+// KRAs SECTION (CRUD)
+// ==========================================
+function KrasSection({ setError, setSuccess, onKrasChanged }) {
+  const { t } = useLanguage();
+  const [kras, setKras] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
+  // Toast popup state
+  const [toast, setToast] = useState({
+    show: false,
+    type: "success",
+    title: "",
+    message: "",
+  });
+  const [toastKey, setToastKey] = useState(0);
+  const showToast = (type, title, message = "") => {
+    setToastKey((k) => k + 1);
+    setToast({ show: true, type, title, message });
+  };
+
+  const [formData, setFormData] = useState({
+    kraNumber: "",
+    name: "",
+    nameEnglish: "",
+    unit: "",
+    description: "",
+    sortOrder: "",
+    isActive: true,
+  });
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      const res = await kraApi.getAll();
+      const list = Array.isArray(res?.data?.data) ? res.data.data : [];
+      setKras(list);
+    } catch (err) {
+      const msg = err.response?.data?.message || "Failed to load KRAs";
+      setError(msg);
+      showToast("error", t("त्रुटी", "Error"), msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const openCreate = () => {
+    setEditing(null);
+    setFormData({
+      kraNumber: "",
+      name: "",
+      nameEnglish: "",
+      unit: "",
+      description: "",
+      sortOrder: "",
+      isActive: true,
+    });
+    setShowModal(true);
+  };
+
+  const openEdit = (kra) => {
+    setEditing(kra);
+    setFormData({
+      kraNumber: kra?.kraNumber ?? "",
+      name: kra?.name ?? "",
+      nameEnglish: kra?.nameEnglish ?? "",
+      unit: kra?.unit ?? "",
+      description: kra?.description ?? "",
+      sortOrder: kra?.sortOrder ?? "",
+      isActive: kra?.isActive !== false,
+    });
+    setShowModal(true);
+  };
+
+  const save = async () => {
+    // Basic validation
+    if (!formData.name || !formData.name.trim()) {
+      const msg = t("KRA चे नाव आवश्यक आहे", "KRA name is required");
+      setError(msg);
+      showToast("warning", msg);
+      return;
+    }
+    try {
+      setSaving(true);
+      const payload = {
+        ...formData,
+        name: formData.name.trim(),
+        nameEnglish: (formData.nameEnglish || "").trim(),
+        kraNumber:
+          formData.kraNumber === "" ? undefined : Number(formData.kraNumber),
+        sortOrder: formData.sortOrder === "" ? 0 : Number(formData.sortOrder),
+      };
+      // Remove kraNumber from payload if undefined so it's not sent as null
+      if (payload.kraNumber === undefined) delete payload.kraNumber;
+
+      if (editing?._id) {
+        await kraApi.update(editing._id, payload);
+        const msg = t("KRA अपडेट झाले", "KRA updated successfully");
+        setSuccess(msg);
+        showToast("success", msg);
+      } else {
+        await kraApi.create(payload);
+        const msg = t("KRA तयार झाले", "KRA created successfully");
+        setSuccess(msg);
+        showToast("success", msg);
+      }
+
+      setShowModal(false);
+      await load();
+      if (typeof onKrasChanged === "function") await onKrasChanged();
+    } catch (err) {
+      const msg = err.response?.data?.message || "Failed to save KRA";
+      setError(msg);
+      showToast("error", t("त्रुटी", "Error"), msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (kra) => {
+    if (!kra?._id) return;
+    if (!window.confirm(t("KRA डिलीट करायचे?", "Delete this KRA?"))) return;
+    try {
+      setDeletingId(kra._id);
+      await kraApi.delete(kra._id);
+      const msg = t("KRA डिलीट झाले", "KRA deleted successfully");
+      setSuccess(msg);
+      showToast("success", msg);
+      await load();
+      if (typeof onKrasChanged === "function") await onKrasChanged();
+    } catch (err) {
+      const msg = err.response?.data?.message || "Failed to delete KRA";
+      setError(msg);
+      showToast("error", t("त्रुटी", "Error"), msg);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (loading) {
+    return <LoadingSpinner text={t("KRA लोड होत आहे...", "Loading KRAs...")} />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Toast popup */}
+      <AutoToast
+        key={toastKey}
+        isVisible={toast.show}
+        type={toast.type}
+        title={toast.title}
+        message={toast.message}
+        duration={2500}
+      />
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">
+              {t("KRA व्यवस्थापन", "KRA Management")}
+            </h2>
+            <p className="text-sm text-slate-500">
+              {t(
+                "KRA मास्टरसाठी CRUD (गरजेनुसार कितीही KRA)",
+                "CRUD for KRA master (add any number of KRAs)",
+              )}
+            </p>
+          </div>
+
+          <button
+            onClick={openCreate}
+            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg shadow-indigo-200"
+          >
+            {t("➕ KRA जोडा", "➕ Add KRA")}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-700">
+                  {t("क्रमांक", "No.")}
+                </th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-700">
+                  {t("नाव (मराठी)", "Name (Marathi)")}
+                </th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-700">
+                  {t("नाव (English)", "Name (English)")}
+                </th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-700">
+                  {t("युनिट", "Unit")}
+                </th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-700">
+                  {t("स्थिती", "Status")}
+                </th>
+                <th className="px-6 py-4 text-right text-sm font-semibold text-slate-700">
+                  {t("क्रिया", "Actions")}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {kras.map((k) => (
+                <tr key={k._id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 text-slate-700 font-semibold">
+                    {k.kraNumber ?? k.sortOrder ?? "-"}
+                  </td>
+                  <td className="px-6 py-4 text-slate-700">{k.name}</td>
+                  <td className="px-6 py-4 text-slate-600">
+                    {k.nameEnglish || "-"}
+                  </td>
+                  <td className="px-6 py-4 text-slate-600">{k.unit || "-"}</td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                        k.isActive !== false
+                          ? "bg-green-100 text-green-700"
+                          : "bg-slate-200 text-slate-700"
+                      }`}
+                    >
+                      {k.isActive !== false
+                        ? t("Active", "Active")
+                        : t("Inactive", "Inactive")}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => openEdit(k)}
+                        className="px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50"
+                      >
+                        {t("Edit", "Edit")}
+                      </button>
+                      <button
+                        onClick={() => remove(k)}
+                        disabled={deletingId === k._id}
+                        className="px-3 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingId === k._id
+                          ? t("Deleting...", "Deleting...")
+                          : t("Delete", "Delete")}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !saving && setShowModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden">
+            <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 text-white">
+              <h3 className="text-lg font-bold">
+                {editing ? t("KRA एडिट", "Edit KRA") : t("KRA जोडा", "Add KRA")}
+              </h3>
+              <p className="text-sm opacity-80">
+                {t(
+                  "टीप: KRA 3 साठी {year} वापरू शकता",
+                  "Tip: You can use {year} placeholder for KRA 3",
+                )}
+              </p>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("KRA क्रमांक", "KRA Number")}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formData.kraNumber}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, kraNumber: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("Sort Order", "Sort Order")}
+                </label>
+                <input
+                  type="number"
+                  value={formData.sortOrder}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, sortOrder: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("नाव (मराठी)", "Name (Marathi)")}
+                </label>
+                <input
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, name: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("नाव (English)", "Name (English)")}
+                </label>
+                <input
+                  value={formData.nameEnglish}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, nameEnglish: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("युनिट", "Unit")}
+                </label>
+                <input
+                  value={formData.unit}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, unit: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-end gap-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, isActive: e.target.checked }))
+                    }
+                  />
+                  {t("Active", "Active")}
+                </label>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  {t("वर्णन", "Description")}
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, description: e.target.value }))
+                  }
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowModal(false)}
+                disabled={saving}
+                className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+              >
+                {t("रद्द करा", "Cancel")}
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50"
+              >
+                {saving ? t("Saving...", "Saving...") : t("सेव्ह", "Save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

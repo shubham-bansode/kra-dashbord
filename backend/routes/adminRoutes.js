@@ -14,7 +14,7 @@ const Corporation = require('../models/Corporation');
 const Region = require('../models/Region');
 const Circle = require('../models/Circle');
 const Kra = require('../models/Kra');
-const { getAllKras } = require('../config/kraMaster');
+const { getAllKrasAsync } = require('../config/kraMaster');
 const {
   getAllowedCorporationNames,
   isAllowedRegionName,
@@ -389,7 +389,7 @@ router.post('/entries',
         });
       }
 
-      const baseKras = getAllKras(req.body.kraYear);
+      const baseKras = await getAllKrasAsync(req.body.kraYear);
       const requestKras = Array.isArray(req.body.kras) ? req.body.kras : [];
       const requestMap = new Map(requestKras.map((k) => [Number(k.kraId), k]));
 
@@ -489,7 +489,7 @@ router.put('/entries/:id',
       delete updates.createdAt;
       delete updates.updatedAt;
 
-      const baseKras = getAllKras(updates.kraYear);
+      const baseKras = await getAllKrasAsync(updates.kraYear);
       const requestKras = Array.isArray(updates.kras) ? updates.kras : [];
       const requestMap = new Map(requestKras.map((k) => [Number(k.kraId), k]));
 

@@ -144,6 +144,17 @@ kraMonthlyEntrySchema.index(
   { unique: true }
 );
 
+// Dashboard filter index (supports frequent queries by org + kraYear + period)
+kraMonthlyEntrySchema.index({
+  corporation: 1,
+  region: 1,
+  circle: 1,
+  division: 1,
+  kraYear: 1,
+  achievementYear: 1,
+  achievementMonth: 1
+});
+
 // Derive month/year early so required validation passes
 kraMonthlyEntrySchema.pre('validate', function (next) {
   if (this.achievementDate) {

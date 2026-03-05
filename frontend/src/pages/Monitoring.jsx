@@ -150,7 +150,7 @@ export default function Monitoring() {
     setError("");
 
     try {
-      const params = {};
+      const params = { periodMode: "all" };
       if (filters.corporation) params.corporation = filters.corporation;
       if (filters.kraYear) params.kraYear = filters.kraYear;
       if (filters.kra) params.kra = filters.kra;
@@ -203,6 +203,7 @@ export default function Monitoring() {
         const corpName = entry.corporation?.name || "";
         const regionName = entry.region?.name || "";
         const circleName = entry.circle?.name || "";
+        const divisionName = entry.division?.name || "";
         const kraYear = entry.kraYear || "";
         const achievementDate = formatDateForExcel(entry.achievementDate);
         const achievementMonth = entry.achievementMonth || 1;
@@ -228,6 +229,7 @@ export default function Monitoring() {
             "महामंडळ (Corporation)": corpName,
             Region_1: regionName,
             Circle: circleName,
+            Division: divisionName,
             "फलनिष्पत्तीची  क्षेत्रे KRA": kraName,
             "फलनिष्पत्तीची  क्षेत्रे (KRA) वर्ष": kraYear,
             "KRA वार्षिक उद्दिष्ट": annualTarget,
@@ -258,8 +260,9 @@ export default function Monitoring() {
       // Set column widths for readability
       worksheet["!cols"] = [
         { wch: 30 }, // Corporation
-        { wch: 20 }, // Region
-        { wch: 20 }, // Circle
+        { wch: 30 }, // Region
+        { wch: 25 }, // Circle
+        { wch: 65 }, // Division
         { wch: 55 }, // KRA Name
         { wch: 15 }, // KRA Year
         { wch: 18 }, // Annual Target

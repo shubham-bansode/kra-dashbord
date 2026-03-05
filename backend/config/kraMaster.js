@@ -1,6 +1,8 @@
 // Central KRA master data (source of truth for backend)
 // Weightage is backend-controlled.
 
+const Kra = require('../models/Kra');
+
 const KRA_WEIGHTS = {
   1: 15,
   2: 15,
@@ -68,9 +70,60 @@ function getAllKras(kraYear) {
   }));
 }
 
+function applyYearTemplate(value, kraYear) {
+  const str = String(value || '').trim();
+  if (!str) return '';
+  if (!kraYear) return str;
+  if (str.includes('{year}')) return str.replaceAll('{year}', String(kraYear).trim());
+  return str;
+}
+
+/**
+ * Async version that prefers DB-defined KRAs (admin-editable) and falls back
+ * to the static master KRAs in this file.
+ *
+ * Rules:
+ * - Always returns an array of length 7 with kraId 1..7
+ * - Uses DB KRA name if available for kraNumber (or sortOrder) 1..7
+ * - Supports {year} placeholder in DB names (used for year-dependent KRA 3)
+ */
+async function getAllKrasAsync(kraYear) {
+  try {
+    const docs = await Kra.find({ isActive: true })
+      .select('kraNumber sortOrder name')
+      .sort({ kraNumber: 1, sortOrder: 1, name: 1 })
+      .lean();
+
+    const byNumber = new Map();
+    for (const doc of docs) {
+      const candidate = Number(doc?.kraNumber ?? doc?.sortOrder);
+      if (!Number.isFinite(candidate)) continue;
+      if (candidate < 1 || candidate > 7) continue;
+      if (byNumber.has(candidate)) continue;
+      if (!doc?.name) continue;
+      byNumber.set(candidate, doc);
+    }
+
+    return [1, 2, 3, 4, 5, 6, 7].map((kraId) => {
+      const doc = byNumber.get(kraId);
+      const dbName = applyYearTemplate(doc?.name, kraYear);
+
+      return {
+        kraId,
+        kraName: dbName || getKraName(kraId, kraYear),
+        weight: KRA_WEIGHTS[kraId] || 0,
+      };
+    });
+  } catch (e) {
+    // If DB is unavailable or query fails, fall back to static.
+    return getAllKras(kraYear);
+  }
+}
+
 module.exports = {
   KRA_WEIGHTS,
   MASTER_KRAS,
   getKraName,
   getAllKras,
+  getAllKrasAsync,
 };

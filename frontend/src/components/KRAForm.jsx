@@ -4,6 +4,7 @@ import {
   regionApi,
   circleApi,
   divisionApi,
+  kraApi,
   kraEntryApi,
   financialYearApi,
 } from "../services/api";
@@ -185,6 +186,7 @@ const KRAForm = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedCorporation, setSelectedCorporation] = useState(null);
   const [selectedRegion, setSelectedRegion] = useState(null);
+  const [masterKras, setMasterKras] = useState([]);
 
   // KRA selection flow - show all 7 KRAs at once
   const [selectedKraIds, setSelectedKraIds] = useState([]);
@@ -199,8 +201,26 @@ const KRAForm = () => {
 
   // Get KRAs to display based on config and selected year
   const displayKras = useMemo(() => {
-    return getKrasForConfig(activeConfig, formData.kraYear);
-  }, [activeConfig, formData.kraYear]);
+    const configKras = getKrasForConfig(activeConfig, formData.kraYear);
+    if (!Array.isArray(masterKras) || masterKras.length === 0)
+      return configKras;
+
+    const masterById = new Map(masterKras.map((k) => [k.id, k]));
+
+    return configKras.map((kra) => {
+      const master = masterById.get(kra.id);
+      if (!master) return kra;
+      return {
+        ...kra,
+        name: master.name || kra.name,
+        nameEn: master.nameEn || kra.nameEn,
+        displayName: master.displayName || kra.displayName,
+        displayNameEn: master.displayNameEn || kra.displayNameEn,
+        unit: master.unit || kra.unit,
+        unitEn: master.unitEn || kra.unitEn,
+      };
+    });
+  }, [activeConfig, formData.kraYear, masterKras]);
 
   // Only show selected KRAs for validation (no longer used for table display)
   const selectedDisplayKras = useMemo(() => {
@@ -222,6 +242,45 @@ const KRAForm = () => {
         ]);
 
         setCorporations(corpRes.data.data);
+
+        try {
+          const kraRes = await kraApi.getAll();
+          const kraList = Array.isArray(kraRes?.data?.data)
+            ? kraRes.data.data
+            : [];
+
+          const mapped = kraList
+            .map((k) => {
+              const id = Number(k?.kraNumber) || Number(k?.sortOrder);
+              if (!Number.isFinite(id)) return null;
+
+              const rawMr = String(k?.name || "").trim();
+              const rawEn = String(k?.nameEnglish || "").trim();
+
+              const displayMr = rawMr.includes("{year}")
+                ? rawMr.replaceAll("{year}", formData.kraYear || "")
+                : rawMr;
+              const displayEn = rawEn.includes("{year}")
+                ? rawEn.replaceAll("{year}", formData.kraYear || "")
+                : rawEn;
+
+              return {
+                id,
+                name: rawMr,
+                nameEn: rawEn || rawMr,
+                displayName: displayMr || rawMr,
+                displayNameEn: displayEn || rawEn || rawMr,
+                unit: k?.unit || "",
+                unitEn: k?.unit || "",
+              };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.id - b.id);
+
+          setMasterKras(mapped);
+        } catch {
+          setMasterKras([]);
+        }
 
         // Set active financial year from admin settings
         if (fyRes?.data?.data) {
@@ -261,6 +320,25 @@ const KRAForm = () => {
       return next;
     });
   }, [displayKras]);
+
+  // Keep dynamic DB KRA names (with {year}) in sync with selected financial year
+  useEffect(() => {
+    setMasterKras((prev) =>
+      prev.map((k) => {
+        const baseMr = String(k.name || "");
+        const baseEn = String(k.nameEn || "");
+        return {
+          ...k,
+          displayName: baseMr.includes("{year}")
+            ? baseMr.replaceAll("{year}", formData.kraYear || "")
+            : baseMr,
+          displayNameEn: baseEn.includes("{year}")
+            ? baseEn.replaceAll("{year}", formData.kraYear || "")
+            : baseEn,
+        };
+      }),
+    );
+  }, [formData.kraYear]);
 
   // Pre-fill locked user fields
   useEffect(() => {

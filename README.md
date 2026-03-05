@@ -1,244 +1,115 @@
-# KRA Monitoring Data Entry Form
+# KRA Dashboard (Maharashtra WRD)
 
-## केआरए निरीक्षण डेटा एंट्री फॉर्म
-
-A web-based data entry form for KRA (Key Result Areas) monitoring used by the Water Resources Department, Government of Maharashtra (जलसंपदा विभाग, महाराष्ट्र शासन).
-
-![Government of Maharashtra](https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Seal_of_Maharashtra.svg/150px-Seal_of_Maharashtra.svg.png)
+KRA Dashboard is a bilingual (Marathi + English) web application for monthly KRA data entry, monitoring, dashboard analytics, and admin management.
 
 ## Tech Stack
 
-- **Frontend:** React 18 + Vite + Tailwind CSS
-- **Backend:** Node.js + Express.js
-- **Database:** MongoDB
-- **API Style:** REST
-- **Language:** Marathi + English bilingual
+- Frontend: React + Vite + Tailwind CSS
+- Backend: Node.js + Express
+- Database: MongoDB
+- Auth: JWT
 
-## Features
+## What the App Does
 
-- ✅ **Interactive Landing Page** - Government-branded homepage with feature cards
-- ✅ **User Authentication** - Secure signup/login with JWT tokens
-- ✅ **Role-based Access** - Corporation-specific user accounts
-- ✅ **Data Entry Form** - Bilingual KRA data entry with validation
-- ✅ **Dashboard & Analytics** - Visual data representation with charts
-- ✅ Dependent dropdowns (Corporation → Region → Circle)
-- ✅ Bilingual labels (Marathi + English)
-- ✅ Form validation with inline error messages
-- ✅ Financial year date validation
-- ✅ Indian mobile number validation (10 digits, starts with 6-9)
-- ✅ Duplicate entry prevention per organization/KRA/month
-- ✅ Responsive design for desktop & mobile
-- ✅ Government-form style layout
-- ✅ Real-time field validation
-- ✅ Loading states and success/error feedback
-
-## Dashboard Features
-
-- 📊 **Summary Statistics** - Total entries, achievements, targets, and percentages
-- 📈 **Achievements by Corporation** - Bar chart comparing achievement vs target
-- 🥧 **Corporation Distribution** - Pie chart showing entry distribution
-- 📉 **Monthly Trend Analysis** - Line chart tracking monthly achievements
-- 📊 **KRA-wise Analysis** - Horizontal bar chart for KRA performance
-- 🔍 **Advanced Filters** - Filter by Corporation, KRA Year, and KRA type
-- 📋 **Data Table** - Recent entries with color-coded performance indicators
-
-## Corporations Supported
-
-| Corporation               | Code  | Has Regions |
-| ------------------------- | ----- | ----------- |
-| MKVDC, Pune               | MKVDC | ✅ Yes      |
-| VIDC, Nagpur              | VIDC  | ❌ No       |
-| KIDC, Thane               | KIDC  | ❌ No       |
-| TIDC, Jalgaon             | TIDC  | ❌ No       |
-| GMIDC, Ch. Sambhaji Nagar | GMIDC | ❌ No       |
-
-## Prerequisites
-
-- Node.js (v18 or higher)
-- MongoDB (local installation or MongoDB Atlas)
-- npm or yarn
+- User login/signup and role-based access
+- Monthly KRA data entry with validation
+- Financial year controls (active/locked year)
+- Dashboard analytics and exports (Excel/PDF)
+- Admin panel for:
+  - Entry CRUD
+  - User management
+  - Financial year management
+  - KRA master CRUD (7 KRAs)
 
 ## Project Structure
 
-```
+```text
 New KRA/
 ├── backend/
+│   ├── config/
+│   ├── middleware/
 │   ├── models/
-│   │   ├── Corporation.js      # Corporation schema
-│   │   ├── Region.js           # Region schema (linked to corporation)
-│   │   ├── Circle.js           # Circle schema (linked to region)
-│   │   ├── Kra.js              # KRA master data
-│   │   └── KraMonthlyEntry.js  # Monthly entry transactions
 │   ├── routes/
-│   │   ├── corporationRoutes.js
-│   │   ├── regionRoutes.js
-│   │   ├── circleRoutes.js
-│   │   ├── kraRoutes.js
-│   │   └── kraEntryRoutes.js
 │   ├── seeds/
-│   │   └── seedData.js         # Database seeder
-│   ├── .env                    # Environment variables
-│   ├── package.json
-│   └── server.js               # Express server
-│
-└── frontend/
-    ├── public/
-    ├── src/
-    │   ├── components/
-    │   │   └── KRAForm.jsx     # Main form component
-    │   ├── services/
-    │   │   └── api.js          # Axios API service
-    │   ├── utils/
-    │   │   └── helpers.js      # Utility functions
-    │   ├── App.jsx
-    │   ├── index.css           # Tailwind + custom styles
-    │   └── main.jsx
-    ├── index.html
-    ├── package.json
-    ├── postcss.config.js
-    ├── tailwind.config.js
-    └── vite.config.js
+│   ├── utils/
+│   ├── server.js
+│   └── package.json
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── auth/
+│   │   ├── components/
+│   │   ├── config/
+│   │   ├── i18n/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── utils/
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   └── package.json
+└── README.md
 ```
 
-## Quick Start
+## Prerequisites
 
-### 1. Start MongoDB
+- Node.js 18+
+- MongoDB running locally or cloud URI
 
-Make sure MongoDB is running on your system:
+## Environment Setup
 
-```bash
-# Windows (if installed as service)
-net start MongoDB
-
-# Or start mongod manually
-mongod
-```
-
-### 2. Backend Setup
-
-```bash
-# Navigate to backend directory
-cd backend
-
-# Install dependencies
-npm install
-
-# Seed the database with initial data
-npm run seed
-
-# Start the backend server (development mode)
-npm run dev
-```
-
-The backend will run on `http://localhost:5000`
-
-### 3. Frontend Setup
-
-```bash
-# Navigate to frontend directory (in a new terminal)
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start the development server
-npm run dev
-```
-
-The frontend will run on `http://localhost:3000`
-
-## API Endpoints
-
-### Authentication
-
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - User login
-- `GET /api/auth/me` - Get current user profile
-
-### Corporations
-
-- `GET /api/corporations` - Get all corporations
-- `GET /api/corporations/:id` - Get single corporation
-- `POST /api/corporations` - Create corporation
-- `PUT /api/corporations/:id` - Update corporation
-- `DELETE /api/corporations/:id` - Delete corporation
-
-### Regions
-
-- `GET /api/regions` - Get all regions
-- `GET /api/regions/by-corporation/:corporationId` - Get regions by corporation
-- `GET /api/regions/:id` - Get single region
-
-### Circles
-
-- `GET /api/circles` - Get all circles
-- `GET /api/circles/by-region/:regionId` - Get circles by region
-- `GET /api/circles/:id` - Get single circle
-
-### KRAs
-
-- `GET /api/kras` - Get all KRAs
-- `GET /api/kras/:id` - Get single KRA
-
-### KRA Entries
-
-- `GET /api/kra-entries` - Get all entries (with filters)
-- `GET /api/kra-entries/:id` - Get single entry
-- `POST /api/kra-entries` - Create new entry (requires auth)
-- `PUT /api/kra-entries/:id` - Update entry (requires auth)
-- `DELETE /api/kra-entries/:id` - Delete entry (requires auth)
-- `POST /api/kra-entries/check-duplicate` - Check for duplicate entry
-
-### Dashboard
-
-- `GET /api/dashboard/summary` - Get summary statistics
-- `GET /api/dashboard/by-corporation` - Get achievements grouped by corporation
-- `GET /api/dashboard/by-kra` - Get achievements grouped by KRA
-- `GET /api/dashboard/monthly-trend` - Get monthly achievement trend
-
-## Environment Variables
-
-### Backend (.env)
+Create `backend/.env` with:
 
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/kra_monitoring
+JWT_SECRET=change_this_secret
 NODE_ENV=development
-JWT_SECRET=your_jwt_secret_key_here
 ```
 
-## Validation Rules
+## Run the Project
 
-1. **Corporation** - Mandatory dropdown
-2. **Region** - Mandatory only for MKVDC
-3. **Circle** - Mandatory only for MKVDC (depends on Region)
-4. **KRA Year** - Financial year format (e.g., 2024–25)
-5. **KRA Name** - Mandatory dropdown
-6. **Annual Target** - Non-negative number
-7. **Achievement Date** - Must fall within selected financial year
-8. **KRA Achievement** - Non-negative number
-9. **Remarks** - Optional textarea
-10. **Contact Number** - Valid 10-digit Indian mobile number (starts with 6-9)
+### 1) Backend
 
-## Database Collections
+```bash
+cd backend
+npm install
+npm run dev
+```
 
-1. **corporations** - Corporation master data
-2. **regions** - Region master data (linked to corporation)
-3. **circles** - Circle master data (linked to region)
-4. **kras** - KRA master data
-5. **kramonthlyentries** - Transactional KRA entry data
+Backend starts at `http://localhost:5000`.
 
-## Duplicate Prevention
+### 2) Frontend
 
-The system prevents duplicate entries for the same combination of:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-- Corporation + Region + Circle + KRA + Month/Year
+Frontend starts at `http://localhost:3000`.
 
-## License
+## Useful Backend Scripts
 
-Government of Maharashtra - Internal Use Only
+From `backend/`:
+
+- `npm run seed` → seed base data
+- `npm run add-sample` → add sample entries
+- `npm run wipe-entries` → wipe KRA entries (protected command)
+
+## Core API Groups
+
+- `/api/auth` → authentication
+- `/api/kra-entries` → user data entry
+- `/api/dashboard` → analytics and exports
+- `/api/admin` → admin operations
+- `/api/kras` → KRA master list and admin CRUD
+
+## Notes
+
+- KRA master is editable from Admin panel.
+- App expects 7 KRAs for monthly entry flow.
+- If KRA names are updated in admin, new entries use updated names.
 
 ---
 
-Developed for जलसंपदा विभाग, महाराष्ट्र शासन (Water Resources Department, Government of Maharashtra)
-#
+Maintained for Water Resources Department workflows.

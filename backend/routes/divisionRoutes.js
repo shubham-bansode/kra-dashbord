@@ -60,4 +60,24 @@ router.get('/by-circle/:circleId', async (req, res) => {
   }
 });
 
+// GET single division by ID (must come after named routes)
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid division id' });
+    }
+    const division = await Division.findById(id)
+      .populate('circle', 'name code')
+      .populate('region', 'name code')
+      .populate('corporation', 'name code');
+    if (!division) {
+      return res.status(404).json({ success: false, message: 'Division not found' });
+    }
+    res.json({ success: true, data: division });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching division', error: error.message });
+  }
+});
+
 module.exports = router;

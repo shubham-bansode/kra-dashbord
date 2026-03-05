@@ -55,19 +55,24 @@ export const regionApi = {
 // Circle API
 export const circleApi = {
   getAll: () => api.get('/circles'),
+  getById: (id) => api.get(`/circles/${id}`),
   getByRegion: (regionId) => api.get(`/circles/by-region/${regionId}`)
 };
 
 // Division API
 export const divisionApi = {
   getAll: () => api.get('/divisions'),
+  getById: (id) => api.get(`/divisions/${id}`),
   getByCircle: (circleId) => api.get(`/divisions/by-circle/${circleId}`)
 };
 
 // KRA API
 export const kraApi = {
   getAll: () => api.get('/kras'),
-  getById: (id) => api.get(`/kras/${id}`)
+  getById: (id) => api.get(`/kras/${id}`),
+  create: (data) => api.post('/kras', data),
+  update: (id, data) => api.put(`/kras/${id}`, data),
+  delete: (id) => api.delete(`/kras/${id}`)
 };
 
 // KRA Entry API
@@ -109,6 +114,42 @@ export const dashboardApi = {
   getMonthlyTrend: (filters = {}) => {
     const params = new URLSearchParams(filters).toString();
     return api.get(`/dashboard/monthly-trend${params ? `?${params}` : ''}`);
+  },
+  getPeriods: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/periods${params ? `?${params}` : ''}`);
+  },
+  getAchievementBar: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/achievement-bar${params ? `?${params}` : ''}`);
+  },
+  getImprovementRequired: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/improvement-required${params ? `?${params}` : ''}`);
+  },
+  getWeightageDistribution: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/weightage-distribution${params ? `?${params}` : ''}`);
+  },
+  getRankTable: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/rank-table${params ? `?${params}` : ''}`);
+  },
+  getCorpKraPerformance: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/corp-kra-performance${params ? `?${params}` : ''}`);
+  },
+  exportExcel: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/export/excel${params ? `?${params}` : ''}`, {
+      responseType: 'blob'
+    });
+  },
+  exportPdf: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/export/pdf${params ? `?${params}` : ''}` , {
+      responseType: 'blob'
+    });
   }
 };
 
