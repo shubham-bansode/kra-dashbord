@@ -22,6 +22,16 @@ import { localizeName } from "../utils/localize";
 // Import KRA configuration from centralized config file
 import { getActiveKraConfig, getKrasForConfig } from "../config/kraConfig";
 
+const applyKraYearToText = (text, kraYear) => {
+  const raw = String(text || "").trim();
+  const year = String(kraYear || "").trim();
+  if (!raw || !year) return raw;
+  if (raw.includes("{year}")) return raw.replaceAll("{year}", year);
+
+  // Replace hardcoded financial year patterns like 2024-25, 2024/25, 2024–25
+  return raw.replace(/\b(19|20)\d{2}\s*[-–/]\s*\d{2}\b/g, year);
+};
+
 // ============================================================================
 // ICONS
 // ============================================================================
@@ -257,12 +267,8 @@ const KRAForm = () => {
               const rawMr = String(k?.name || "").trim();
               const rawEn = String(k?.nameEnglish || "").trim();
 
-              const displayMr = rawMr.includes("{year}")
-                ? rawMr.replaceAll("{year}", formData.kraYear || "")
-                : rawMr;
-              const displayEn = rawEn.includes("{year}")
-                ? rawEn.replaceAll("{year}", formData.kraYear || "")
-                : rawEn;
+              const displayMr = applyKraYearToText(rawMr, formData.kraYear);
+              const displayEn = applyKraYearToText(rawEn, formData.kraYear);
 
               return {
                 id,
@@ -329,12 +335,8 @@ const KRAForm = () => {
         const baseEn = String(k.nameEn || "");
         return {
           ...k,
-          displayName: baseMr.includes("{year}")
-            ? baseMr.replaceAll("{year}", formData.kraYear || "")
-            : baseMr,
-          displayNameEn: baseEn.includes("{year}")
-            ? baseEn.replaceAll("{year}", formData.kraYear || "")
-            : baseEn,
+          displayName: applyKraYearToText(baseMr, formData.kraYear),
+          displayNameEn: applyKraYearToText(baseEn, formData.kraYear),
         };
       }),
     );
