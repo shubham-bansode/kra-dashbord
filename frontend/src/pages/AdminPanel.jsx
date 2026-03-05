@@ -2857,7 +2857,6 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
   const { t } = useLanguage();
   const [kras, setKras] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -2905,7 +2904,6 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
   }, []);
 
   const openCreate = () => {
-    setEditing(null);
     setFormData({
       kraNumber: "",
       name: "",
@@ -2914,20 +2912,6 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
       description: "",
       sortOrder: "",
       isActive: true,
-    });
-    setShowModal(true);
-  };
-
-  const openEdit = (kra) => {
-    setEditing(kra);
-    setFormData({
-      kraNumber: kra?.kraNumber ?? "",
-      name: kra?.name ?? "",
-      nameEnglish: kra?.nameEnglish ?? "",
-      unit: kra?.unit ?? "",
-      description: kra?.description ?? "",
-      sortOrder: kra?.sortOrder ?? "",
-      isActive: kra?.isActive !== false,
     });
     setShowModal(true);
   };
@@ -2953,17 +2937,10 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
       // Remove kraNumber from payload if undefined so it's not sent as null
       if (payload.kraNumber === undefined) delete payload.kraNumber;
 
-      if (editing?._id) {
-        await kraApi.update(editing._id, payload);
-        const msg = t("KRA अपडेट झाले", "KRA updated successfully");
-        setSuccess(msg);
-        showToast("success", msg);
-      } else {
-        await kraApi.create(payload);
-        const msg = t("KRA तयार झाले", "KRA created successfully");
-        setSuccess(msg);
-        showToast("success", msg);
-      }
+      await kraApi.create(payload);
+      const msg = t("KRA तयार झाले", "KRA created successfully");
+      setSuccess(msg);
+      showToast("success", msg);
 
       setShowModal(false);
       await load();
@@ -3085,12 +3062,6 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={() => openEdit(k)}
-                        className="px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50"
-                      >
-                        {t("Edit", "Edit")}
-                      </button>
-                      <button
                         onClick={() => remove(k)}
                         disabled={deletingId === k._id}
                         className="px-3 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
@@ -3117,7 +3088,7 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden">
             <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 text-white">
               <h3 className="text-lg font-bold">
-                {editing ? t("KRA एडिट", "Edit KRA") : t("KRA जोडा", "Add KRA")}
+                {t("KRA जोडा", "Add KRA")}
               </h3>
               <p className="text-sm opacity-80">
                 {t(
