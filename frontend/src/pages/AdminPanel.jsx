@@ -37,7 +37,6 @@ const SIDEBAR_ITEMS = [
     labelMr: "आर्थिक वर्षे",
     icon: "📅",
   },
-  { id: "kras", label: "KRAs", labelMr: "KRA", icon: "📌" },
   { id: "settings", label: "Settings", labelMr: "सेटिंग्ज", icon: "⚙️" },
 ];
 
@@ -626,29 +625,6 @@ export default function AdminPanel() {
           )}
           {activeSection === "years" && (
             <YearsSection setError={setError} setSuccess={setSuccess} />
-          )}
-          {activeSection === "kras" && (
-            <KrasSection
-              setError={setError}
-              setSuccess={setSuccess}
-              onKrasChanged={async () => {
-                try {
-                  const res = await kraApi.getAll();
-                  const data = Array.isArray(res?.data?.data)
-                    ? res.data.data
-                    : [];
-                  const options = data
-                    .map(mapKraDocToOption)
-                    .filter((o) => Number.isFinite(Number(o.id)))
-                    .sort((a, b) => Number(a.id) - Number(b.id));
-                  setKraOptions(
-                    options.length > 0 ? options : DEFAULT_KRA_OPTIONS,
-                  );
-                } catch {
-                  setKraOptions(DEFAULT_KRA_OPTIONS);
-                }
-              }}
-            />
           )}
           {activeSection === "settings" && (
             <SettingsSection
@@ -3087,9 +3063,7 @@ function KrasSection({ setError, setSuccess, onKrasChanged }) {
           />
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden">
             <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 text-white">
-              <h3 className="text-lg font-bold">
-                {t("KRA जोडा", "Add KRA")}
-              </h3>
+              <h3 className="text-lg font-bold">{t("KRA जोडा", "Add KRA")}</h3>
               <p className="text-sm opacity-80">
                 {t(
                   "टीप: KRA 3 साठी {year} वापरू शकता",

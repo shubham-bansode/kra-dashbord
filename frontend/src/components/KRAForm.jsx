@@ -30,10 +30,7 @@ const applyKraYearToText = (text, kraYear) => {
 
   // Replace hardcoded financial year patterns like:
   // 2024-25, 2024/25, 2024–25, 2024-2025, 2024/2025, 2024–2025
-  return raw.replace(
-    /\b(19|20)\d{2}\s*[-–/]\s*(\d{2}|(19|20)\d{2})\b/g,
-    year,
-  );
+  return raw.replace(/\b(19|20)\d{2}\s*[-–/]\s*(\d{2}|(19|20)\d{2})\b/g, year);
 };
 
 // ============================================================================
