@@ -5,6 +5,35 @@ require('dotenv').config();
 
 const app = express();
 
+function getAllowedOrigins() {
+  return String(process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function buildCorsOptions() {
+  const allowedOrigins = getAllowedOrigins();
+
+  if (allowedOrigins.length === 0) {
+    return {
+      origin: true,
+      credentials: true
+    };
+  }
+
+  return {
+    credentials: true,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error('CORS origin not allowed'));
+    }
+  };
+}
+
 // Validate required environment variables
 if (!process.env.MONGODB_URI) {
   console.error('❌ MONGODB_URI environment variable is required');
@@ -16,7 +45,7 @@ if (!process.env.JWT_SECRET) {
 }
 
 // Middleware
-app.use(cors());
+app.use(cors(buildCorsOptions()));
 app.use(express.json());
 
 // MongoDB Connection
