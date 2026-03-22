@@ -5,6 +5,7 @@ import AuthPage from "./pages/AuthPage";
 import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
 import Monitoring from "./pages/Monitoring";
+import Reports from "./pages/Reports";
 import GlobalHeader from "./components/GlobalHeader";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import { useLanguage } from "./i18n/LanguageContext";
@@ -42,7 +43,14 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/reports" element={<ComingSoon title="Reports" />} />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <Reports />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/monitoring"
             element={

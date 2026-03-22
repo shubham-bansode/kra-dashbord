@@ -57,6 +57,29 @@ const kraMonthlyEntrySchema = new mongoose.Schema(
       default: null
     },
 
+    // Snapshot names captured at submission time to keep reports stable
+    // even if master hierarchy records are later edited/reseeded.
+    corporationName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    regionName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    circleName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    divisionName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
     // KRA year (financial year string, e.g. 2024-2025)
     kraYear: {
       type: String,

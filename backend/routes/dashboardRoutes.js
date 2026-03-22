@@ -68,9 +68,44 @@ function previousPeriod(period) {
 
 function getGrouping(query) {
   const groupByRaw = String(query.groupBy || '').toLowerCase();
+  if (groupByRaw === 'corporation') {
+    return {
+      groupBy: 'corporation',
+      entityField: 'corporation',
+      snapshotNameField: 'corporationName',
+      idField: '$corporation',
+      ensureNonNull: true,
+      lookup: { from: 'corporations', localField: '_id', foreignField: '_id', as: 'entityInfo' },
+      namePath: 'entityInfo.name'
+    };
+  }
+  if (groupByRaw === 'region') {
+    return {
+      groupBy: 'region',
+      entityField: 'region',
+      snapshotNameField: 'regionName',
+      idField: '$region',
+      ensureNonNull: true,
+      lookup: { from: 'regions', localField: '_id', foreignField: '_id', as: 'entityInfo' },
+      namePath: 'entityInfo.name'
+    };
+  }
+  if (groupByRaw === 'circle') {
+    return {
+      groupBy: 'circle',
+      entityField: 'circle',
+      snapshotNameField: 'circleName',
+      idField: '$circle',
+      ensureNonNull: true,
+      lookup: { from: 'circles', localField: '_id', foreignField: '_id', as: 'entityInfo' },
+      namePath: 'entityInfo.name'
+    };
+  }
   if (groupByRaw === 'division') {
     return {
       groupBy: 'division',
+      entityField: 'division',
+      snapshotNameField: 'divisionName',
       idField: '$division',
       ensureNonNull: true,
       lookup: { from: 'divisions', localField: '_id', foreignField: '_id', as: 'entityInfo' },
@@ -78,11 +113,54 @@ function getGrouping(query) {
     };
   }
   return {
-    groupBy: 'circle',
-    idField: '$circle',
-    ensureNonNull: false,
-    lookup: { from: 'circles', localField: '_id', foreignField: '_id', as: 'entityInfo' },
+    groupBy: 'corporation',
+    entityField: 'corporation',
+    snapshotNameField: 'corporationName',
+    idField: '$corporation',
+    ensureNonNull: true,
+    lookup: { from: 'corporations', localField: '_id', foreignField: '_id', as: 'entityInfo' },
     namePath: 'entityInfo.name'
+  };
+}
+
+function getEntityPresenceMatchStage(grouping) {
+  if (!grouping?.ensureNonNull || !grouping?.entityField) return [];
+  return [{ $match: { [grouping.entityField]: { $ne: null } } }];
+}
+
+function entityNameProjection(grouping) {
+  const prefixByGroup = {
+    corporation: 'Corporation',
+    region: 'Region',
+    circle: 'Circle',
+    division: 'Division'
+  };
+  const prefix = prefixByGroup[grouping?.groupBy] || 'Entity';
+  return {
+    $let: {
+      vars: {
+        resolvedName: {
+          $ifNull: [{ $arrayElemAt: [`$${grouping.namePath}`, 0] }, '']
+        },
+        snapshotName: {
+          $ifNull: ['$snapshotName', '']
+        },
+        entityIdStr: { $toString: '$_id' }
+      },
+      in: {
+        $cond: {
+          if: { $gt: [{ $strLenCP: { $trim: { input: '$$resolvedName' } } }, 0] },
+          then: '$$resolvedName',
+          else: {
+            $cond: {
+              if: { $gt: [{ $strLenCP: { $trim: { input: '$$snapshotName' } } }, 0] },
+              then: '$$snapshotName',
+              else: { $concat: [prefix, ' #', { $substrCP: ['$$entityIdStr', 18, 6] }] }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -168,11 +246,12 @@ router.get('/summary', async (req, res) => {
     const grouping = getGrouping(req.query);
     const bestWorst = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
           _id: grouping.idField,
+          snapshotName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -192,7 +271,7 @@ router.get('/summary', async (req, res) => {
       {
         $project: {
           _id: 1,
-          name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+          name: entityNameProjection(grouping),
           achievementPercentage: 1
         }
       }
@@ -200,11 +279,12 @@ router.get('/summary', async (req, res) => {
 
     const worst = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
           _id: grouping.idField,
+          snapshotName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -224,7 +304,7 @@ router.get('/summary', async (req, res) => {
       {
         $project: {
           _id: 1,
-          name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+          name: entityNameProjection(grouping),
           achievementPercentage: 1
         }
       }
@@ -621,11 +701,12 @@ router.get('/achievement-bar', async (req, res) => {
 
     const data = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
           _id: grouping.idField,
+          snapshotName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -643,7 +724,7 @@ router.get('/achievement-bar', async (req, res) => {
       {
         $project: {
           _id: 1,
-          name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+          name: entityNameProjection(grouping),
           totalAchievement: { $round: ['$totalAchievement', 2] },
           totalTarget: { $round: ['$totalTarget', 2] },
           achievementPercentage: 1
@@ -683,11 +764,12 @@ router.get('/improvement-required', async (req, res) => {
 
     const data = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
           _id: grouping.idField,
+          snapshotName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -716,7 +798,7 @@ router.get('/improvement-required', async (req, res) => {
       {
         $project: {
           _id: 1,
-          name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+          name: entityNameProjection(grouping),
           achievementPercentage: 1,
           gapPercentage: 1
         }
@@ -805,7 +887,7 @@ router.get('/rank-table', async (req, res) => {
 
     const rows = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
@@ -814,6 +896,7 @@ router.get('/rank-table', async (req, res) => {
             year: '$achievementYear',
             month: '$achievementMonth'
           },
+          entityName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -833,14 +916,21 @@ router.get('/rank-table', async (req, res) => {
           entityId: '$_id.entity',
           year: '$_id.year',
           month: '$_id.month',
+          entityName: { $ifNull: ['$entityName', ''] },
           achievementPercentage: 1
         }
       }
     ]);
 
     const entityIds = [...new Set(rows.map((r) => String(r.entityId)))].map((id) => new mongoose.Types.ObjectId(id));
+    const collectionByGroup = {
+      corporation: 'corporations',
+      region: 'regions',
+      circle: 'circles',
+      division: 'divisions'
+    };
     const entities = await mongoose.connection
-      .collection(grouping.groupBy === 'division' ? 'divisions' : 'circles')
+      .collection(collectionByGroup[grouping.groupBy] || 'circles')
       .find({ _id: { $in: entityIds } }, { projection: { name: 1 } })
       .toArray();
     const nameById = new Map(entities.map((e) => [String(e._id), e.name]));
@@ -848,7 +938,9 @@ router.get('/rank-table', async (req, res) => {
     const byEntity = new Map();
     for (const r of rows) {
       const key = String(r.entityId);
-      const entry = byEntity.get(key) || { entityId: key, name: nameById.get(key) || '', prev: 0, curr: 0 };
+      const resolvedName =
+        String(nameById.get(key) || '').trim() || String(r.entityName || '').trim();
+      const entry = byEntity.get(key) || { entityId: key, name: resolvedName, prev: 0, curr: 0 };
       if (r.year === current.year && r.month === current.month) entry.curr = r.achievementPercentage;
       if (prev && r.year === prev.year && r.month === prev.month) entry.prev = r.achievementPercentage;
       byEntity.set(key, entry);
@@ -925,11 +1017,12 @@ router.get('/export/excel', async (req, res) => {
 
     const best = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
           _id: grouping.idField,
+          snapshotName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -943,16 +1036,17 @@ router.get('/export/excel', async (req, res) => {
       { $sort: { achievementPercentage: -1 } },
       { $limit: 1 },
       { $lookup: grouping.lookup },
-      { $project: { _id: 1, name: { $arrayElemAt: [`$${grouping.namePath}`, 0] }, achievementPercentage: 1 } }
+      { $project: { _id: 1, name: entityNameProjection(grouping), achievementPercentage: 1 } }
     ]);
 
     const worst = await KraMonthlyEntry.aggregate([
       { $match: match },
-      ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+      ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
       {
         $group: {
           _id: grouping.idField,
+          snapshotName: { $first: `$${grouping.snapshotNameField}` },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
@@ -966,17 +1060,18 @@ router.get('/export/excel', async (req, res) => {
       { $sort: { achievementPercentage: 1 } },
       { $limit: 1 },
       { $lookup: grouping.lookup },
-      { $project: { _id: 1, name: { $arrayElemAt: [`$${grouping.namePath}`, 0] }, achievementPercentage: 1 } }
+      { $project: { _id: 1, name: entityNameProjection(grouping), achievementPercentage: 1 } }
     ]);
 
     const achievementBars = period
       ? await KraMonthlyEntry.aggregate([
           { $match: match },
-          ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+          ...getEntityPresenceMatchStage(grouping),
           ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
           {
             $group: {
               _id: grouping.idField,
+              snapshotName: { $first: `$${grouping.snapshotNameField}` },
               totalAchievement: { $sum: achievementExpr() },
               totalTarget: { $sum: targetExpr() }
             }
@@ -991,7 +1086,7 @@ router.get('/export/excel', async (req, res) => {
           {
             $project: {
               _id: 1,
-              name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+              name: entityNameProjection(grouping),
               totalAchievement: { $round: ['$totalAchievement', 2] },
               totalTarget: { $round: ['$totalTarget', 2] },
               achievementPercentage: 1
@@ -1004,11 +1099,12 @@ router.get('/export/excel', async (req, res) => {
     const improvementRequired = period
       ? await KraMonthlyEntry.aggregate([
           { $match: match },
-          ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+          ...getEntityPresenceMatchStage(grouping),
           ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
           {
             $group: {
               _id: grouping.idField,
+              snapshotName: { $first: `$${grouping.snapshotNameField}` },
               totalAchievement: { $sum: achievementExpr() },
               totalTarget: { $sum: targetExpr() }
             }
@@ -1034,7 +1130,7 @@ router.get('/export/excel', async (req, res) => {
           {
             $project: {
               _id: 1,
-              name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+              name: entityNameProjection(grouping),
               achievementPercentage: 1,
               gapPercentage: 1
             }
@@ -1079,7 +1175,7 @@ router.get('/export/excel', async (req, res) => {
 
           const rows = await KraMonthlyEntry.aggregate([
             { $match: rankMatch },
-            ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+            ...getEntityPresenceMatchStage(grouping),
             ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
             {
               $group: {
@@ -1246,11 +1342,12 @@ router.get('/export/pdf', async (req, res) => {
     const bars = period
       ? await KraMonthlyEntry.aggregate([
           { $match: match },
-          ...(grouping.ensureNonNull ? [{ $match: { division: { $ne: null } } }] : []),
+          ...getEntityPresenceMatchStage(grouping),
           ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
           {
             $group: {
               _id: grouping.idField,
+              snapshotName: { $first: `$${grouping.snapshotNameField}` },
               totalAchievement: { $sum: achievementExpr() },
               totalTarget: { $sum: targetExpr() }
             }
@@ -1265,7 +1362,7 @@ router.get('/export/pdf', async (req, res) => {
           {
             $project: {
               _id: 0,
-              name: { $arrayElemAt: [`$${grouping.namePath}`, 0] },
+              name: entityNameProjection(grouping),
               achievementPercentage: 1
             }
           },

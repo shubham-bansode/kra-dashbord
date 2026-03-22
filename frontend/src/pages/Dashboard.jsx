@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   BarChart,
   Bar,
@@ -122,6 +123,85 @@ const downloadBlob = (blob, filename) => {
   a.remove();
   window.URL.revokeObjectURL(url);
 };
+
+const toSafeNumber = (value, fallback = 0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const clampPercent = (value) => {
+  const n = toSafeNumber(value, 0);
+  if (n < 0) return 0;
+  if (n > 200) return 200;
+  return n;
+};
+
+const toCleanLabel = (value, fallback = "") => {
+  const label = String(value || "").trim();
+  return label || fallback;
+};
+
+const normalizeBarRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      ...row,
+      name: toCleanLabel(row?.name),
+      achievementPercentage: clampPercent(row?.achievementPercentage),
+      totalAchievement: toSafeNumber(row?.totalAchievement),
+      totalTarget: toSafeNumber(row?.totalTarget),
+    }))
+    .filter(
+      (row) => row.name && Number.isFinite(row.achievementPercentage),
+    );
+
+const normalizeTrendRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : []).map((d) => {
+    const achievement = toSafeNumber(d?.totalAchievement);
+    const target = toSafeNumber(d?.totalTarget);
+    return {
+      ...d,
+      totalAchievement: achievement,
+      totalTarget: target,
+      label: `${d?.monthName || "M"} ${d?.year || ""}`.trim(),
+      achievementPct:
+        target > 0 ? Math.round((achievement / target) * 100 * 100) / 100 : 0,
+    };
+  });
+
+const normalizeKraRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : []).map((row) => ({
+    ...row,
+    kraId: row?.kraId,
+    kraName: row?.kraName || `KRA ${row?.kraId || "-"}`,
+    achievementPercentage: clampPercent(row?.achievementPercentage),
+    totalAchievement: toSafeNumber(row?.totalAchievement),
+    totalTarget: toSafeNumber(row?.totalTarget),
+  }));
+
+const ChartEmptyState = ({ title }) => (
+  <div className="h-[300px] rounded-xl border border-dashed border-slate-200 bg-slate-50/80 flex items-center justify-center">
+    <div className="text-center px-6">
+      <p className="text-sm font-semibold text-slate-500">{title}</p>
+      <p className="text-xs text-slate-400 mt-1">
+        No chart data for current filters
+      </p>
+    </div>
+  </div>
+);
+
+const ChartLoadingState = () => (
+  <div className="h-[300px] rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+    <div className="animate-pulse h-full grid grid-cols-8 gap-2 items-end">
+      {Array.from({ length: 8 }).map((_, idx) => (
+        <div
+          key={idx}
+          className="rounded-t-md bg-slate-200"
+          style={{ height: `${35 + ((idx * 9) % 55)}%` }}
+        />
+      ))}
+    </div>
+  </div>
+);
 
 export default function Dashboard() {
   const { t, language } = useLanguage();
@@ -247,16 +327,18 @@ export default function Dashboard() {
   };
 
   const getGroupByForSelection = () => {
-    // If a circle is selected but division isn't, show division-level comparison.
-    if (filters.circle && !filters.division) return "division";
-    return "circle";
+    if (!filters.corporation) return "corporation";
+    if (!filters.region) return "region";
+    if (!filters.circle) return "circle";
+    return "division";
   };
 
   const getEntityLabel = () => {
     const groupBy = getGroupByForSelection();
-    return groupBy === "division"
-      ? t("विभाग", "Division")
-      : t("वर्तुळ", "Circle");
+    if (groupBy === "corporation") return t("महामंडळ", "Corporation");
+    if (groupBy === "region") return t("विभाग", "Region");
+    if (groupBy === "circle") return t("मंडळ", "Circle");
+    return t("उपविभाग", "Division");
   };
 
   const handleEntityDrillDown = async (row) => {
@@ -265,61 +347,40 @@ export default function Dashboard() {
     const entityId = row._id || row.entityId;
     if (!entityId) return;
 
-    try {
-      if (groupBy === "circle") {
-        // Fetch circle to get its parent region & corporation
-        const res = await circleApi.getById(entityId);
-        const circle = res.data?.data;
-        if (!circle) return;
-
-        const corpId =
-          typeof circle.corporation === "object"
-            ? circle.corporation._id
-            : circle.corporation;
-        const regionId =
-          typeof circle.region === "object" ? circle.region._id : circle.region;
-
-        setFilters((prev) => ({
-          ...prev,
-          corporation: String(corpId || prev.corporation),
-          region: String(regionId || ""),
-          circle: String(entityId),
-          division: "",
-          period: prev.period,
-        }));
-      } else {
-        // Division drill-down: fetch division to get circle, region, corporation
-        const res = await divisionApi.getById(entityId);
-        const div = res.data?.data;
-        if (!div) return;
-
-        const corpId =
-          typeof div.corporation === "object"
-            ? div.corporation._id
-            : div.corporation;
-        const regionId =
-          typeof div.region === "object" ? div.region._id : div.region;
-        const circleId =
-          typeof div.circle === "object" ? div.circle._id : div.circle;
-
-        setFilters((prev) => ({
-          ...prev,
-          corporation: String(corpId || prev.corporation),
-          region: String(regionId || ""),
-          circle: String(circleId || ""),
-          division: String(entityId),
-          period: prev.period,
-        }));
-      }
-    } catch (err) {
-      console.error("Drill-down lookup failed:", err);
-      // Fallback: just set the single filter
-      if (groupBy === "circle") {
-        handleFilterChange("circle", String(entityId));
-      } else {
-        handleFilterChange("division", String(entityId));
-      }
+    if (groupBy === "corporation") {
+      setFilters((prev) => ({
+        ...prev,
+        corporation: String(entityId),
+        region: "",
+        circle: "",
+        division: "",
+      }));
+      return;
     }
+
+    if (groupBy === "region") {
+      setFilters((prev) => ({
+        ...prev,
+        region: String(entityId),
+        circle: "",
+        division: "",
+      }));
+      return;
+    }
+
+    if (groupBy === "circle") {
+      setFilters((prev) => ({
+        ...prev,
+        circle: String(entityId),
+        division: "",
+      }));
+      return;
+    }
+
+    setFilters((prev) => ({
+      ...prev,
+      division: String(entityId),
+    }));
   };
 
   const exportExcel = async () => {
@@ -474,6 +535,36 @@ export default function Dashboard() {
           ? kraWiseRes.value.data?.data || []
           : [];
 
+      const safeTopBars = normalizeBarRows(topBarsData);
+      const safeBottomBars = normalizeBarRows(bottomBarsData);
+      const safeRankRows = (Array.isArray(rankData) ? rankData : []).map(
+        (r) => ({
+          ...r,
+          name: toCleanLabel(r?.name),
+          currentMonthPercentage: clampPercent(r?.currentMonthPercentage),
+        }),
+      );
+
+      const fallbackTopFromRanks = [...safeRankRows]
+        .filter((r) => r.name)
+        .sort((a, b) => b.currentMonthPercentage - a.currentMonthPercentage)
+        .slice(0, 5)
+        .map((r) => ({
+          _id: r.entityId,
+          name: r.name,
+          achievementPercentage: r.currentMonthPercentage,
+        }));
+
+      const fallbackBottomFromRanks = [...safeRankRows]
+        .filter((r) => r.name)
+        .sort((a, b) => a.currentMonthPercentage - b.currentMonthPercentage)
+        .slice(0, 5)
+        .map((r) => ({
+          _id: r.entityId,
+          name: r.name,
+          achievementPercentage: r.currentMonthPercentage,
+        }));
+
       const hasValidSummary =
         Number.isFinite(Number(summaryData?.achievementPercentage)) &&
         Number.isFinite(Number(summaryData?.totalTarget));
@@ -512,27 +603,31 @@ export default function Dashboard() {
         });
       }
 
-      setTopBars(topBarsData);
-      setBottomBars(bottomBarsData);
-      setWeightageDistribution(weightData);
-      setRankTable(rankData);
-      setCorpKraPies(corpPieData);
-
-      // Monthly trend
-      setMonthlyTrend(
-        trendRaw.map((d) => ({
-          ...d,
-          label: `${d.monthName} ${d.year}`,
-          achievementPct:
-            d.totalTarget > 0
-              ? Math.round((d.totalAchievement / d.totalTarget) * 100 * 100) /
-                100
-              : 0,
+      setTopBars(safeTopBars.length ? safeTopBars : fallbackTopFromRanks);
+      setBottomBars(
+        safeBottomBars.length ? safeBottomBars : fallbackBottomFromRanks,
+      );
+      setWeightageDistribution(Array.isArray(weightData) ? weightData : []);
+      setRankTable(safeRankRows);
+      setCorpKraPies(
+        (Array.isArray(corpPieData) ? corpPieData : []).map((corp) => ({
+          ...corp,
+          corporationName: toCleanLabel(corp?.corporationName),
+          data: (Array.isArray(corp?.data) ? corp.data : []).map((item) => ({
+            ...item,
+            kraName: toCleanLabel(item?.kraName, "KRA"),
+            slicePercentage: clampPercent(item?.slicePercentage),
+            achievementPercentage: clampPercent(item?.achievementPercentage),
+            weight: toSafeNumber(item?.weight),
+          })),
         })),
       );
 
+      // Monthly trend
+      setMonthlyTrend(normalizeTrendRows(trendRaw));
+
       // KRA-wise achievement
-      setKraWiseData(kraWiseRaw);
+      setKraWiseData(normalizeKraRows(kraWiseRaw));
 
       const selectedKraNumber = filters.kra
         ? kras.find((k) => String(k._id) === String(filters.kra))?.kraNumber
@@ -639,6 +734,12 @@ export default function Dashboard() {
   const hasAchievementData =
     Number(summary?.totalTarget || 0) > 0 ||
     Number(summary?.totalEntries || 0) > 0;
+  const topBottomMax = Math.max(
+    100,
+    ...topBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
+    ...bottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
+  );
+  const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-violet-50/20 py-6 px-3 md:px-6">
@@ -666,9 +767,16 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <Link
+                to="/reports"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25 transition-all text-sm"
+              >
+                <span>🧠</span> {t("अहवाल", "Insights")}
+              </Link>
               <button
                 type="button"
                 onClick={exportExcel}
+                disabled={isLoading}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25 transition-all text-sm"
               >
                 <span>📥</span> {t("एक्सेल", "Excel")}
@@ -676,6 +784,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={exportPdf}
+                disabled={isLoading}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25 transition-all text-sm"
               >
                 <span>📄</span> {t("पीडीएफ", "PDF")}
@@ -683,6 +792,13 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {isLoading && (
+          <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 font-semibold">
+            <span className="inline-block h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+            {t("डेटा अद्ययावत होत आहे...", "Refreshing dashboard data...")}
+          </div>
+        )}
 
         {/* ═══════ FILTERS ═══════ */}
         <SectionCard>
@@ -935,76 +1051,92 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={topBars}
-                margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
-              >
-                <defs>
-                  {BAR_TOP_COLORS.map((c, i) => (
-                    <linearGradient
-                      key={`gt-${i}`}
-                      id={`gradTop${i}`}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="0%" stopColor={c} stopOpacity={1} />
-                      <stop offset="100%" stopColor={c} stopOpacity={0.6} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
-                <XAxis
-                  dataKey="name"
-                  interval={0}
-                  tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: "#eef2ff" }}
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "none",
-                    boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                    fontSize: 13,
-                  }}
-                  formatter={(v) => [
-                    `${Number(v || 0).toFixed(2)}%`,
-                    t("साध्य %", "Achievement %"),
-                  ]}
-                />
-                <Bar
-                  dataKey="achievementPercentage"
-                  radius={[8, 8, 0, 0]}
-                  cursor="pointer"
-                  name={t("साध्य %", "Achievement %")}
-                  onClick={(e) => handleEntityDrillDown(e?.payload)}
+            {isLoading ? (
+              <ChartLoadingState />
+            ) : topBars.length === 0 ? (
+              <ChartEmptyState
+                title={t("डेटा उपलब्ध नाही", "No top performers found")}
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={topBars}
+                  margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
                 >
-                  {topBars.map((_, i) => (
-                    <Cell
-                      key={`top-${i}`}
-                      fill={`url(#gradTop${i % BAR_TOP_COLORS.length})`}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  <defs>
+                    {BAR_TOP_COLORS.map((c, i) => (
+                      <linearGradient
+                        key={`gt-${i}`}
+                        id={`gradTop${i}`}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop offset="0%" stopColor={c} stopOpacity={1} />
+                        <stop offset="100%" stopColor={c} stopOpacity={0.6} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#e2e8f0"
+                  />
+                  <XAxis
+                    dataKey="name"
+                    interval={0}
+                    tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[0, yDomainMax]}
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "#eef2ff" }}
+                    contentStyle={{
+                      borderRadius: "12px",
+                      border: "none",
+                      boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                      fontSize: 13,
+                    }}
+                    formatter={(v) => [
+                      `${Number(v || 0).toFixed(2)}%`,
+                      t("साध्य %", "Achievement %"),
+                    ]}
+                  />
+                  <Bar
+                    dataKey="achievementPercentage"
+                    radius={[8, 8, 0, 0]}
+                    cursor="pointer"
+                    name={t("साध्य %", "Achievement %")}
+                    onClick={(e) => handleEntityDrillDown(e?.payload)}
+                  >
+                    {topBars.map((_, i) => (
+                      <Cell
+                        key={`top-${i}`}
+                        fill={`url(#gradTop${i % BAR_TOP_COLORS.length})`}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
             <p className="mt-3 text-[11px] font-semibold text-indigo-500 text-center bg-indigo-50 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
               {t("बारवर क्लिक करा ड्रिल-डाउनसाठी", "Click a bar to drill down")}
             </p>
+            {topBars.length > 0 && topBars.length < 5 && (
+              <p className="mt-2 text-center text-[11px] text-slate-400">
+                {t(
+                  "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
+                  "Fewer than 5 entities available",
+                )}
+              </p>
+            )}
           </SectionCard>
 
           {/* Bottom 5 */}
@@ -1022,98 +1154,116 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={bottomBars}
-                margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
-              >
-                <defs>
-                  {BAR_BTM_COLORS.map((c, i) => (
-                    <linearGradient
-                      key={`gb-${i}`}
-                      id={`gradBtm${i}`}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="0%" stopColor={c} stopOpacity={1} />
-                      <stop offset="100%" stopColor={c} stopOpacity={0.6} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
-                <XAxis
-                  dataKey="name"
-                  interval={0}
-                  tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: "#fff1f2" }}
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "none",
-                    boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                    fontSize: 13,
-                  }}
-                  formatter={(v) => [
-                    `${Number(v || 0).toFixed(2)}%`,
-                    t("साध्य %", "Achievement %"),
-                  ]}
-                />
-                <Bar
-                  dataKey="achievementPercentage"
-                  radius={[8, 8, 0, 0]}
-                  cursor="pointer"
-                  name={t("साध्य %", "Achievement %")}
-                  onClick={(e) => handleEntityDrillDown(e?.payload)}
+            {isLoading ? (
+              <ChartLoadingState />
+            ) : bottomBars.length === 0 ? (
+              <ChartEmptyState
+                title={t("डेटा उपलब्ध नाही", "No low performers found")}
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={bottomBars}
+                  margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
                 >
-                  {bottomBars.map((_, i) => (
-                    <Cell
-                      key={`btm-${i}`}
-                      fill={`url(#gradBtm${i % BAR_BTM_COLORS.length})`}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  <defs>
+                    {BAR_BTM_COLORS.map((c, i) => (
+                      <linearGradient
+                        key={`gb-${i}`}
+                        id={`gradBtm${i}`}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop offset="0%" stopColor={c} stopOpacity={1} />
+                        <stop offset="100%" stopColor={c} stopOpacity={0.6} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#e2e8f0"
+                  />
+                  <XAxis
+                    dataKey="name"
+                    interval={0}
+                    tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[0, yDomainMax]}
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "#fff1f2" }}
+                    contentStyle={{
+                      borderRadius: "12px",
+                      border: "none",
+                      boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                      fontSize: 13,
+                    }}
+                    formatter={(v) => [
+                      `${Number(v || 0).toFixed(2)}%`,
+                      t("साध्य %", "Achievement %"),
+                    ]}
+                  />
+                  <Bar
+                    dataKey="achievementPercentage"
+                    radius={[8, 8, 0, 0]}
+                    cursor="pointer"
+                    name={t("साध्य %", "Achievement %")}
+                    onClick={(e) => handleEntityDrillDown(e?.payload)}
+                  >
+                    {bottomBars.map((_, i) => (
+                      <Cell
+                        key={`btm-${i}`}
+                        fill={`url(#gradBtm${i % BAR_BTM_COLORS.length})`}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
             <p className="mt-3 text-[11px] font-semibold text-rose-500 text-center bg-rose-50 py-1.5 rounded-lg cursor-pointer hover:bg-rose-100 transition">
               {t("बारवर क्लिक करा ड्रिल-डाउनसाठी", "Click a bar to drill down")}
             </p>
+            {bottomBars.length > 0 && bottomBars.length < 5 && (
+              <p className="mt-2 text-center text-[11px] text-slate-400">
+                {t(
+                  "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
+                  "Fewer than 5 entities available",
+                )}
+              </p>
+            )}
           </SectionCard>
         </div>
 
         {/* ═══════ MONTHLY TREND AREA CHART ═══════ */}
-        {monthlyTrend.length > 1 && (
-          <SectionCard>
-            <div className="flex items-center gap-3 mb-5">
-              <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
-                📈
-              </span>
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("मासिक कल", "Monthly Trend")}
-                </h3>
-                <p className="text-xs text-slate-400 font-medium">
-                  {t(
-                    "साध्य vs लक्ष्य कालावधीमध्ये",
-                    "Achievement vs Target over time",
-                  )}
-                </p>
-              </div>
+        <SectionCard>
+          <div className="flex items-center gap-3 mb-5">
+            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
+              📈
+            </span>
+            <div>
+              <h3 className="text-lg font-extrabold text-slate-800">
+                {t("मासिक कल", "Monthly Trend")}
+              </h3>
+              <p className="text-xs text-slate-400 font-medium">
+                {t(
+                  "साध्य vs लक्ष्य कालावधीमध्ये",
+                  "Achievement vs Target over time",
+                )}
+              </p>
             </div>
+          </div>
+          {isLoading ? (
+            <ChartLoadingState />
+          ) : monthlyTrend.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
               <AreaChart
                 data={monthlyTrend}
@@ -1208,8 +1358,12 @@ export default function Dashboard() {
                 />
               </AreaChart>
             </ResponsiveContainer>
-          </SectionCard>
-        )}
+          ) : (
+            <ChartEmptyState
+              title={t("डेटा उपलब्ध नाही", "No trend data available")}
+            />
+          )}
+        </SectionCard>
 
         {/* ═══════ KRA ACHIEVEMENT RADAR + PROGRESS BARS ═══════ */}
         {kraWiseData.length > 0 && (
@@ -1398,45 +1552,53 @@ export default function Dashboard() {
                 {t("KRA भारांश", "KRA Weightage Distribution")}
               </h3>
             </div>
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie
-                  data={weightageDistribution}
-                  dataKey="weight"
-                  nameKey="kraName"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={120}
-                  paddingAngle={3}
-                  label={(d) => `${d.weight}%`}
-                  stroke="none"
-                >
-                  {weightageDistribution.map((_, index) => (
-                    <Cell
-                      key={`wc-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "none",
-                    boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                  }}
-                  formatter={(v) => [
-                    Number(v || 0).toFixed(2),
-                    t("वजन", "Weight"),
-                  ]}
-                  labelFormatter={(label) => localizeString(label, language)}
-                />
-                <Legend
-                  iconType="circle"
-                  wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            {isLoading ? (
+              <ChartLoadingState />
+            ) : weightageDistribution.length === 0 ? (
+              <ChartEmptyState
+                title={t("डेटा उपलब्ध नाही", "No weightage data available")}
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height={320}>
+                <PieChart>
+                  <Pie
+                    data={weightageDistribution}
+                    dataKey="weight"
+                    nameKey="kraName"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={120}
+                    paddingAngle={3}
+                    label={(d) => `${d.weight}%`}
+                    stroke="none"
+                  >
+                    {weightageDistribution.map((_, index) => (
+                      <Cell
+                        key={`wc-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: "12px",
+                      border: "none",
+                      boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                    }}
+                    formatter={(v) => [
+                      Number(v || 0).toFixed(2),
+                      t("वजन", "Weight"),
+                    ]}
+                    labelFormatter={(label) => localizeString(label, language)}
+                  />
+                  <Legend
+                    iconType="circle"
+                    wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </SectionCard>
 
           {/* Leaderboard */}
@@ -1586,92 +1748,102 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-            {corpKraPies.map((corp, corpIdx) => {
-              const borderColors = [
-                "border-indigo-200",
-                "border-violet-200",
-                "border-cyan-200",
-                "border-amber-200",
-                "border-emerald-200",
-                "border-rose-200",
-              ];
-              const dotColors = [
-                "bg-indigo-500",
-                "bg-violet-500",
-                "bg-cyan-500",
-                "bg-amber-500",
-                "bg-emerald-500",
-                "bg-rose-500",
-              ];
-              return (
-                <div
-                  key={corp.corporationId}
-                  className={`border ${borderColors[corpIdx % borderColors.length]} rounded-2xl p-5 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
-                >
-                  <h4 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
-                    <span
-                      className={`w-3 h-3 rounded-full ${dotColors[corpIdx % dotColors.length]} inline-block`}
-                    ></span>
-                    {corp.corporationName}
-                  </h4>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <PieChart>
-                      <Pie
-                        data={corp.data || []}
-                        dataKey="slicePercentage"
-                        nameKey="kraName"
-                        cx="50%"
-                        cy="45%"
-                        innerRadius={40}
-                        outerRadius={90}
-                        paddingAngle={2}
-                        stroke="none"
-                        label={({ kraName, slicePercentage }) => {
-                          const name = localizeString(kraName || "", language);
-                          const short =
-                            name.length > 18 ? name.slice(0, 16) + "…" : name;
-                          return `${short} (${Number(slicePercentage || 0).toFixed(1)}%)`;
-                        }}
-                        labelLine={{ stroke: "#94a3b8", strokeWidth: 1 }}
-                      >
-                        {(corp.data || []).map((_, index) => (
-                          <Cell
-                            key={`cell-${corp.corporationId}-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "12px",
-                          border: "none",
-                          boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                          fontSize: 12,
-                        }}
-                        formatter={(v, _n, props) => {
-                          const p = props?.payload;
-                          const ach = Number(p?.achievementPercentage || 0);
-                          const w = Number(p?.weight || 0);
-                          return [
-                            `${Number(v || 0).toFixed(2)}% (Ach ${ach.toFixed(1)}%, W ${w})`,
-                            t("स्कोअर शेअर", "Score share"),
-                          ];
-                        }}
-                        labelFormatter={(label) =>
-                          localizeString(label, language)
-                        }
-                      />
-                      <Legend
-                        iconType="circle"
-                        wrapperStyle={{ fontSize: 11, fontWeight: 600 }}
-                        formatter={(value) => localizeString(value, language)}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              );
-            })}
-            {corpKraPies.length === 0 && (
+            {isLoading ? (
+              <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ChartLoadingState />
+                <ChartLoadingState />
+              </div>
+            ) : (
+              corpKraPies.map((corp, corpIdx) => {
+                const borderColors = [
+                  "border-indigo-200",
+                  "border-violet-200",
+                  "border-cyan-200",
+                  "border-amber-200",
+                  "border-emerald-200",
+                  "border-rose-200",
+                ];
+                const dotColors = [
+                  "bg-indigo-500",
+                  "bg-violet-500",
+                  "bg-cyan-500",
+                  "bg-amber-500",
+                  "bg-emerald-500",
+                  "bg-rose-500",
+                ];
+                return (
+                  <div
+                    key={corp.corporationId}
+                    className={`border ${borderColors[corpIdx % borderColors.length]} rounded-2xl p-5 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
+                  >
+                    <h4 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
+                      <span
+                        className={`w-3 h-3 rounded-full ${dotColors[corpIdx % dotColors.length]} inline-block`}
+                      ></span>
+                      {corp.corporationName}
+                    </h4>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <PieChart>
+                        <Pie
+                          data={corp.data || []}
+                          dataKey="slicePercentage"
+                          nameKey="kraName"
+                          cx="50%"
+                          cy="45%"
+                          innerRadius={40}
+                          outerRadius={90}
+                          paddingAngle={2}
+                          stroke="none"
+                          label={({ kraName, slicePercentage }) => {
+                            const name = localizeString(
+                              kraName || "",
+                              language,
+                            );
+                            const short =
+                              name.length > 18 ? name.slice(0, 16) + "…" : name;
+                            return `${short} (${Number(slicePercentage || 0).toFixed(1)}%)`;
+                          }}
+                          labelLine={{ stroke: "#94a3b8", strokeWidth: 1 }}
+                        >
+                          {(corp.data || []).map((_, index) => (
+                            <Cell
+                              key={`cell-${corp.corporationId}-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "12px",
+                            border: "none",
+                            boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                            fontSize: 12,
+                          }}
+                          formatter={(v, _n, props) => {
+                            const p = props?.payload;
+                            const ach = Number(p?.achievementPercentage || 0);
+                            const w = Number(p?.weight || 0);
+                            return [
+                              `${Number(v || 0).toFixed(2)}% (Ach ${ach.toFixed(1)}%, W ${w})`,
+                              t("स्कोअर शेअर", "Score share"),
+                            ];
+                          }}
+                          labelFormatter={(label) =>
+                            localizeString(label, language)
+                          }
+                        />
+                        <Legend
+                          iconType="circle"
+                          wrapperStyle={{ fontSize: 11, fontWeight: 600 }}
+                          formatter={(value) => localizeString(value, language)}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })
+            )}
+            {!isLoading && corpKraPies.length === 0 && (
               <div className="col-span-full text-center py-12 text-slate-400 text-sm">
                 {t("डेटा उपलब्ध नाही", "No corporation data available")}
               </div>

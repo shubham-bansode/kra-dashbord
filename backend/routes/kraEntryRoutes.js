@@ -75,6 +75,22 @@ async function validateHierarchyStrict({ corporationDoc, regionId, circleId, div
   return { ok: true };
 }
 
+async function resolveHierarchyNames({ corporationId, regionId, circleId, divisionId }) {
+  const [corporationDoc, regionDoc, circleDoc, divisionDoc] = await Promise.all([
+    corporationId ? Corporation.findById(corporationId).select('name').lean() : null,
+    regionId ? Region.findById(regionId).select('name').lean() : null,
+    circleId ? Circle.findById(circleId).select('name').lean() : null,
+    divisionId ? Division.findById(divisionId).select('name').lean() : null
+  ]);
+
+  return {
+    corporationName: corporationDoc?.name || '',
+    regionName: regionDoc?.name || '',
+    circleName: circleDoc?.name || '',
+    divisionName: divisionDoc?.name || ''
+  };
+}
+
 function parseKraYear(kraYear) {
   if (!kraYear) return null;
   const match = String(kraYear).trim().match(/^(\d{4})[-–](\d{2}|\d{4})$/);
@@ -369,6 +385,15 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
       submittedAt: new Date()
     };
 
+    const names = await resolveHierarchyNames({
+      corporationId: req.body.corporation,
+      regionId: region,
+      circleId: circle,
+      divisionId: division
+    });
+
+    Object.assign(entryPayload, names);
+
     const entry = await KraMonthlyEntry.create(entryPayload);
     
     // Populate for response
@@ -481,6 +506,15 @@ router.put('/:id', auth, validateSubmission, validateDateYearMatch, async (req, 
       contactNumber: req.body.contactNumber,
       submittedBy: req.body.submittedBy || req.user.mobileNumber
     };
+
+    const names = await resolveHierarchyNames({
+      corporationId: req.body.corporation,
+      regionId: updateRegion,
+      circleId: updateCircle,
+      divisionId: req.body.division || null
+    });
+
+    Object.assign(updatePayload, names);
 
     const entry = await KraMonthlyEntry.findByIdAndUpdate(
       req.params.id,
@@ -694,6 +728,17 @@ router.post('/bulk', auth, async (req, res) => {
       contactNumber,
       submittedBy,
       submittedAt: new Date()
+    });
+
+    const names = await resolveHierarchyNames({
+      corporationId,
+      regionId: region,
+      circleId: circle,
+      divisionId: division
+    });
+
+    await KraMonthlyEntry.findByIdAndUpdate(submission._id, names, {
+      runValidators: false
     });
 
     res.status(201).json({
