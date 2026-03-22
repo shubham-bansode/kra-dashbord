@@ -3,6 +3,7 @@ const router = express.Router();
 const KraMonthlyEntry = require('../models/KraMonthlyEntry');
 const mongoose = require('mongoose');
 const Kra = require('../models/Kra');
+const Division = require('../models/Division');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 
@@ -162,6 +163,91 @@ function entityNameProjection(grouping) {
       }
     }
   };
+}
+
+function isFallbackEntityLabel(name, grouping) {
+  const prefixByGroup = {
+    corporation: 'Corporation',
+    region: 'Region',
+    circle: 'Circle',
+    division: 'Division'
+  };
+  const prefix = prefixByGroup[grouping?.groupBy] || 'Entity';
+  return String(name || '').startsWith(`${prefix} #`);
+}
+
+async function backfillCorporationNamesFromDivisionSnapshots(rows, grouping) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  if (grouping?.groupBy !== 'corporation') return rows;
+
+  const unresolvedIds = rows
+    .filter((row) => row?._id && isFallbackEntityLabel(row.name, grouping))
+    .map((row) => String(row._id));
+
+  if (unresolvedIds.length === 0) return rows;
+
+  const unresolvedObjectIds = unresolvedIds
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (unresolvedObjectIds.length === 0) return rows;
+
+  const snapshots = await KraMonthlyEntry.aggregate([
+    {
+      $match: {
+        corporation: { $in: unresolvedObjectIds },
+        divisionName: { $exists: true, $ne: '' }
+      }
+    },
+    {
+      $group: {
+        _id: '$corporation',
+        divisionNames: { $addToSet: '$divisionName' }
+      }
+    }
+  ]);
+
+  const allDivisionNames = snapshots
+    .flatMap((row) => row.divisionNames || [])
+    .filter((name) => String(name || '').trim().length > 0);
+
+  if (allDivisionNames.length === 0) return rows;
+
+  const divisions = await Division.find({ name: { $in: allDivisionNames } })
+    .populate('corporation', 'name')
+    .select('name corporation')
+    .lean();
+
+  const divisionToCorporationName = new Map();
+  for (const division of divisions) {
+    const divisionName = String(division?.name || '').trim();
+    const corporationName = String(division?.corporation?.name || '').trim();
+    if (!divisionName || !corporationName) continue;
+    if (!divisionToCorporationName.has(divisionName)) {
+      divisionToCorporationName.set(divisionName, corporationName);
+    }
+  }
+
+  const inferredCorpNameById = new Map();
+  for (const row of snapshots) {
+    const corpId = String(row?._id || '');
+    if (!corpId) continue;
+
+    const names = Array.isArray(row?.divisionNames) ? row.divisionNames : [];
+    const inferred = names
+      .map((name) => divisionToCorporationName.get(String(name || '').trim()) || '')
+      .find((name) => name.length > 0);
+
+    if (inferred) inferredCorpNameById.set(corpId, inferred);
+  }
+
+  return rows.map((row) => {
+    const corpId = String(row?._id || '');
+    if (!corpId || !isFallbackEntityLabel(row.name, grouping)) return row;
+    const inferredName = inferredCorpNameById.get(corpId);
+    if (!inferredName) return row;
+    return { ...row, name: inferredName };
+  });
 }
 
 async function resolveKraIdParam(kraParam) {
@@ -699,7 +785,7 @@ router.get('/achievement-bar', async (req, res) => {
     const mode = String(req.query.mode || 'top').toLowerCase(); // top | bottom
     const limit = Math.min(Math.max(toInt(req.query.limit) || 5, 1), 50);
 
-    const data = await KraMonthlyEntry.aggregate([
+    const rawData = await KraMonthlyEntry.aggregate([
       { $match: match },
       ...getEntityPresenceMatchStage(grouping),
       ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
@@ -733,6 +819,8 @@ router.get('/achievement-bar', async (req, res) => {
       { $sort: { achievementPercentage: mode === 'bottom' ? 1 : -1 } },
       { $limit: limit }
     ]);
+
+    const data = await backfillCorporationNamesFromDivisionSnapshots(rawData, grouping);
 
     res.json({ success: true, period, data });
   } catch (error) {
