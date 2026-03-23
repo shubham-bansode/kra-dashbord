@@ -30,16 +30,6 @@ const HomePage = () => {
     },
     {
       id: 2,
-      title: "रिपोर्ट पहा",
-      titleEn: "View Reports",
-      description: "KRA अहवाल आणि विश्लेषण",
-      descriptionEn: "KRA Reports & Analytics",
-      icon: "📊",
-      path: "/reports",
-      color: "from-green-500 to-green-700",
-    },
-    {
-      id: 3,
       title: "प्रकल्प निरीक्षण",
       titleEn: "Project Monitoring",
       description: "सर्कल नुसार केआरए निरीक्षण डॅशबोर्ड",
@@ -49,7 +39,7 @@ const HomePage = () => {
       color: "from-cyan-500 to-cyan-700",
     },
     {
-      id: 4,
+      id: 3,
       title: "डॅशबोर्ड",
       titleEn: "Dashboard",
       description: "डेटा विश्लेषण आणि अंतर्दृष्टी",
@@ -167,7 +157,7 @@ const HomePage = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((feature) => (
             <div
               key={feature.id}
@@ -280,18 +270,11 @@ const HomePage = () => {
             <div className="mt-8 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
               <p className="text-sm text-gray-600">
                 {t(
-                  "अधिक माहितीसाठी रिपोर्ट्स आणि निरीक्षण विभाग पहा",
-                  "View Reports and Monitoring section for more information",
+                  "अधिक माहितीसाठी निरीक्षण विभाग पहा",
+                  "View Monitoring section for more information",
                 )}
               </p>
               <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleCardClick("/reports")}
-                  className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"
-                >
-                  {t("रिपोर्ट →", "Reports →")}
-                </button>
                 <button
                   type="button"
                   onClick={() => handleCardClick("/monitoring")}

@@ -150,9 +150,7 @@ const normalizeBarRows = (rows = []) =>
       totalAchievement: toSafeNumber(row?.totalAchievement),
       totalTarget: toSafeNumber(row?.totalTarget),
     }))
-    .filter(
-      (row) => row.name && Number.isFinite(row.achievementPercentage),
-    );
+    .filter((row) => row.name && Number.isFinite(row.achievementPercentage));
 
 const normalizeTrendRows = (rows = []) =>
   (Array.isArray(rows) ? rows : []).map((d) => {
@@ -767,12 +765,6 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Link
-                to="/reports"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25 transition-all text-sm"
-              >
-                <span>🧠</span> {t("अहवाल", "Insights")}
-              </Link>
               <button
                 type="button"
                 onClick={exportExcel}

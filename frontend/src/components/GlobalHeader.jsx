@@ -47,7 +47,6 @@ const GlobalHeader = () => {
     { path: "/", label: { en: "Home", mr: "मुख्यपृष्ठ" } },
     { path: "/data-entry", label: { en: "Data Entry", mr: "डेटा एंट्री" } },
     { path: "/dashboard", label: { en: "Dashboard", mr: "डॅशबोर्ड" } },
-    { path: "/reports", label: { en: "Reports", mr: "रिपोर्ट" } },
     { path: "/monitoring", label: { en: "Monitoring", mr: "निरीक्षण" } },
   ];
 
