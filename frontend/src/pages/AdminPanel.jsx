@@ -407,7 +407,7 @@ export default function AdminPanel() {
   const isSuperAdmin = user?.role === "superadmin";
 
   useEffect(() => {
-    refreshMe();
+    refreshMe({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

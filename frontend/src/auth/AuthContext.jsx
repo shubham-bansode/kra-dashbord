@@ -76,21 +76,21 @@ export function AuthProvider({ children }) {
     return res;
   };
 
-  const refreshMe = async () => {
+  const refreshMe = async ({ silent = false } = {}) => {
     if (!token) {
       setUser(null);
       setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const res = await authApi.me();
       setUser(res.data?.data || null);
     } catch (e) {
       logout();
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   PieChart,
   Pie,
   Cell,
@@ -11,8 +13,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  AreaChart,
-  Area,
   RadarChart,
   Radar,
   PolarGrid,
@@ -596,8 +596,24 @@ export default function Dashboard() {
         })),
       );
 
-      // Monthly trend
-      setMonthlyTrend(normalizeTrendRows(trendRaw));
+      // Monthly trend with month-wise percentage share of entries.
+      const trendRows = normalizeTrendRows(trendRaw);
+      const totalEntriesAcrossMonths = trendRows.reduce(
+        (sum, row) => sum + toSafeNumber(row?.entriesCount),
+        0,
+      );
+      const trendWithPercentage = trendRows.map((row) => ({
+        ...row,
+        entriesPercentage:
+          totalEntriesAcrossMonths > 0
+            ? Math.round(
+                (toSafeNumber(row?.entriesCount) / totalEntriesAcrossMonths) *
+                  100 *
+                  100,
+              ) / 100
+            : 0,
+      }));
+      setMonthlyTrend(trendWithPercentage);
 
       // KRA-wise achievement
       setKraWiseData(normalizeKraRows(kraWiseRaw));
@@ -1135,7 +1151,7 @@ export default function Dashboard() {
           </SectionCard>
         </div>
 
-        {/* ═══════ MONTHLY TREND AREA CHART ═══════ */}
+        {/* ═══════ MONTHLY TREND LINE CHART ═══════ */}
         <SectionCard>
           <div className="flex items-center gap-3 mb-5">
             <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
@@ -1147,8 +1163,8 @@ export default function Dashboard() {
               </h3>
               <p className="text-xs text-slate-400 font-medium">
                 {t(
-                  "महिन्यानुसार एकूण नोंदींचा कल",
-                  "Month-wise total entries trend",
+                  "महिन्यानुसार नोंदी टक्केवारीचा कल",
+                  "Month-wise entries percentage trend",
                 )}
               </p>
             </div>
@@ -1157,32 +1173,22 @@ export default function Dashboard() {
             <ChartLoadingState />
           ) : monthlyTrend.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
-              <AreaChart
+              <LineChart
                 data={monthlyTrend}
                 margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
               >
-                <defs>
-                  <linearGradient id="gradAch" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.05} />
-                  </linearGradient>
-                  <linearGradient id="gradTgt" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis
+                  type="category"
                   dataKey="label"
                   tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
+                  type="number"
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
                   tick={{ fill: "#94a3b8", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
@@ -1194,42 +1200,39 @@ export default function Dashboard() {
                     boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
                     fontSize: 13,
                   }}
-                  formatter={(v, name) => [
-                    Number(v || 0).toLocaleString("en-IN"),
-                    name === "entriesCount"
-                      ? t("नोंदी", "Entries")
-                      : t("डेटा", "Data"),
-                  ]}
+                  formatter={(v, _name, props) => {
+                    const count = Number(props?.payload?.entriesCount || 0);
+                    return [
+                      `${Number(v || 0).toFixed(2)}% (${count.toLocaleString("en-IN")} ${t("नोंदी", "entries")})`,
+                      t("नोंदी टक्केवारी", "Entries %"),
+                    ];
+                  }}
                 />
                 <Legend
                   iconType="circle"
                   wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                  formatter={(value) =>
-                    value === "entriesCount"
-                      ? t("नोंदी", "Entries")
-                      : t("डेटा", "Data")
-                  }
+                  formatter={() => t("नोंदी टक्केवारी", "Entries %")}
                 />
-                <Area
+                <Line
                   type="monotone"
-                  dataKey="entriesCount"
+                  dataKey="entriesPercentage"
+                  name={t("नोंदी टक्केवारी", "Entries %")}
                   stroke="#6366f1"
                   strokeWidth={3}
-                  fill="url(#gradAch)"
                   dot={{
                     r: 5,
                     fill: "#6366f1",
-                    strokeWidth: 2,
                     stroke: "#fff",
+                    strokeWidth: 2,
                   }}
                   activeDot={{
                     r: 7,
+                    fill: "#fff",
                     stroke: "#6366f1",
                     strokeWidth: 2,
-                    fill: "#fff",
                   }}
                 />
-              </AreaChart>
+              </LineChart>
             </ResponsiveContainer>
           ) : (
             <ChartEmptyState

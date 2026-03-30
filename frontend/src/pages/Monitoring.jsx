@@ -4,6 +4,26 @@ import { corporationApi, dashboardApi, kraEntryApi } from "../services/api";
 import { generateKraYears } from "../utils/helpers";
 import * as XLSX from "xlsx";
 import { useLanguage } from "../i18n/LanguageContext";
+import { useAuth } from "../auth/AuthContext";
+
+function decodeJwtPayload(token) {
+  try {
+    const payload = String(token || "").split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = atob(normalized);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeIdentity(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .trim();
+}
 
 function Card({ title, titleMr, children }) {
   const { t } = useLanguage();
@@ -22,6 +42,35 @@ function Card({ title, titleMr, children }) {
 function formatNumber(value) {
   const num = Number(value) || 0;
   return num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+function sumNumberField(kras, key) {
+  if (!Array.isArray(kras)) return 0;
+  return kras.reduce((sum, item) => sum + (Number(item?.[key]) || 0), 0);
+}
+
+function getSelectedKraIds(entry) {
+  if (!entry) return [];
+
+  if (Array.isArray(entry.selectedKraIds) && entry.selectedKraIds.length > 0) {
+    return entry.selectedKraIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id))
+      .sort((a, b) => a - b);
+  }
+
+  const fromKras = Array.isArray(entry.kras)
+    ? entry.kras
+        .filter(
+          (k) =>
+            (Number(k?.annualTarget) || 0) > 0 ||
+            (Number(k?.kraAchievement) || 0) > 0,
+        )
+        .map((k) => Number(k?.kraId))
+        .filter((id) => Number.isFinite(id))
+    : [];
+
+  return [...new Set(fromKras)].sort((a, b) => a - b);
 }
 
 // Marathi month names for export
@@ -94,12 +143,23 @@ const KRA_OPTIONS = [
 
 export default function Monitoring() {
   const { t } = useLanguage();
+  const { user, token } = useAuth();
+  const tokenPayload = useMemo(() => decodeJwtPayload(token), [token]);
+
+  const effectiveRole = user?.role || tokenPayload?.role || "user";
+  const effectiveMobile =
+    user?.mobileNumber || tokenPayload?.mobileNumber || "";
+  const effectiveFullName = user?.fullName || "";
+
+  const isPrivilegedUser =
+    effectiveRole === "admin" || effectiveRole === "superadmin";
   const [corporations, setCorporations] = useState([]);
   const [filters, setFilters] = useState({
     corporation: "",
     kraYear: "",
     kra: "",
   });
+  const [activeSection, setActiveSection] = useState("summary");
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const [summary, setSummary] = useState(null);
@@ -107,6 +167,13 @@ export default function Monitoring() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+
+  const [myEntries, setMyEntries] = useState([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [entriesError, setEntriesError] = useState("");
+  const [entriesLastRefresh, setEntriesLastRefresh] = useState(new Date());
+  const [entrySearch, setEntrySearch] = useState("");
+  const [entryPage, setEntryPage] = useState(1);
 
   const kraYears = useMemo(() => generateKraYears(), []);
 
@@ -127,6 +194,43 @@ export default function Monitoring() {
     fetchMonitoringData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.corporation, filters.kraYear, filters.kra]);
+
+  useEffect(() => {
+    setEntryPage(1);
+  }, [entrySearch, filters.corporation, filters.kraYear, filters.kra]);
+
+  useEffect(() => {
+    if (activeSection !== "entries") return;
+    fetchMyEntries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeSection,
+    filters.corporation,
+    filters.kraYear,
+    filters.kra,
+    effectiveRole,
+    effectiveMobile,
+    effectiveFullName,
+  ]);
+
+  useEffect(() => {
+    if (activeSection !== "entries") return;
+
+    const timer = setInterval(() => {
+      fetchMyEntries({ silent: true });
+    }, 10000);
+
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeSection,
+    filters.corporation,
+    filters.kraYear,
+    filters.kra,
+    effectiveRole,
+    effectiveMobile,
+    effectiveFullName,
+  ]);
 
   const fetchMonitoringData = async () => {
     setLoading(true);
@@ -150,6 +254,45 @@ export default function Monitoring() {
       setError(e?.response?.data?.message || "Failed to load report data");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMyEntries = async ({ silent = false } = {}) => {
+    if (!silent) setEntriesLoading(true);
+    setEntriesError("");
+
+    try {
+      const params = {};
+      if (filters.corporation) params.corporation = filters.corporation;
+      if (filters.kraYear) params.kraYear = filters.kraYear;
+      if (filters.kra) params.kra = filters.kra;
+
+      const res = await kraEntryApi.getAll(params);
+      const allEntries = Array.isArray(res.data?.data) ? res.data.data : [];
+
+      const fullName = normalizeIdentity(effectiveFullName);
+      const mobile = normalizeIdentity(effectiveMobile);
+
+      const mine = allEntries.filter((entry) => {
+        const submittedBy = normalizeIdentity(entry?.submittedBy);
+        const contactNumber = normalizeIdentity(entry?.contactNumber);
+
+        if (!submittedBy && !contactNumber) return false;
+        return (
+          (fullName && submittedBy.includes(fullName)) ||
+          (mobile && submittedBy.includes(mobile)) ||
+          (mobile && contactNumber.includes(mobile))
+        );
+      });
+
+      setMyEntries(isPrivilegedUser ? allEntries : mine);
+      setEntriesLastRefresh(new Date());
+    } catch (e) {
+      setEntriesError(
+        e?.response?.data?.message || "Failed to load your entries",
+      );
+    } finally {
+      if (!silent) setEntriesLoading(false);
     }
   };
 
@@ -276,6 +419,44 @@ export default function Monitoring() {
   const resetFilters = () =>
     setFilters({ corporation: "", kraYear: "", kra: "" });
 
+  const filteredMyEntries = useMemo(() => {
+    const query = entrySearch.trim().toLowerCase();
+    if (!query) return myEntries;
+
+    return myEntries.filter((entry) => {
+      const selectedIds = getSelectedKraIds(entry).join(",");
+      return [
+        entry?.corporation?.name,
+        entry?.corporation?.code,
+        entry?.kraYear,
+        entry?.remarks,
+        entry?.contactNumber,
+        entry?.submittedBy,
+        selectedIds,
+      ]
+        .map((v) => String(v || "").toLowerCase())
+        .some((v) => v.includes(query));
+    });
+  }, [myEntries, entrySearch]);
+
+  const PAGE_SIZE = 20;
+  const totalEntryPages = Math.max(
+    1,
+    Math.ceil(filteredMyEntries.length / PAGE_SIZE),
+  );
+
+  const paginatedMyEntries = useMemo(() => {
+    const safePage = Math.min(Math.max(entryPage, 1), totalEntryPages);
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filteredMyEntries.slice(start, start + PAGE_SIZE);
+  }, [filteredMyEntries, entryPage, totalEntryPages]);
+
+  useEffect(() => {
+    if (entryPage > totalEntryPages) {
+      setEntryPage(totalEntryPages);
+    }
+  }, [entryPage, totalEntryPages]);
+
   return (
     <div className="min-h-[calc(100vh-80px)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -312,6 +493,29 @@ export default function Monitoring() {
           </div>
 
           <div className="px-6 py-5">
+            <div className="mb-4 inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <button
+                onClick={() => setActiveSection("summary")}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  activeSection === "summary"
+                    ? "bg-white text-indigo-700 shadow"
+                    : "text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                {t("📊 अहवाल सारांश", "📊 Report Summary")}
+              </button>
+              <button
+                onClick={() => setActiveSection("entries")}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  activeSection === "entries"
+                    ? "bg-white text-indigo-700 shadow"
+                    : "text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                {t("📝 सर्व नोंदी", "📝 All Entries")}
+              </button>
+            </div>
+
             <div className="flex flex-col lg:flex-row lg:items-end gap-4">
               <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -405,175 +609,391 @@ export default function Monitoring() {
           </div>
         </div>
 
-        {/* Corporation-wise report */}
-        <Card title="Corporation Report" titleMr="महामंडळ-वार अहवाल">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="text-sm text-slate-600">
-              {t(
-                "महामंडळानुसार नोंदी आणि कामगिरीचा जलद आढावा.",
-                "Quick view of entries and performance by corporation.",
-              )}
-            </div>
-            <button
-              onClick={exportToExcel}
-              disabled={exporting || loading}
-              className="px-4 py-2 bg-green-700 text-white rounded-xl hover:bg-green-800 disabled:opacity-50 transition-colors flex items-center gap-2"
-            >
-              {exporting ? (
-                <>
-                  <svg
-                    className="animate-spin h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                  {t("निर्यात करत आहे...", "Exporting...")}
-                </>
-              ) : (
-                <>📥 {t("एक्सेल निर्यात (XLSX)", "Export Excel (XLSX)")}</>
-              )}
-            </button>
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    {t("महामंडळ", "Corporation")}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    {t("नोंदी", "Entries")}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    {t("लक्ष्य", "Target")}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    {t("साध्य", "Achievement")}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    %
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading ? (
-                  <tr>
-                    <td className="px-4 py-5 text-slate-500" colSpan={5}>
-                      {t("लोड होत आहे...", "Loading...")}
-                    </td>
-                  </tr>
-                ) : byCorporation.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-5 text-slate-500" colSpan={5}>
-                      {t(
-                        "निवडलेल्या फिल्टरसाठी डेटा नाही.",
-                        "No data for selected filters.",
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  byCorporation.map((c) => {
-                    const target = Number(c.totalTarget) || 0;
-                    const achievement = Number(c.totalAchievement) || 0;
-                    const pct = target > 0 ? (achievement / target) * 100 : 0;
-
-                    const pill =
-                      pct >= 80
-                        ? "bg-green-100 text-green-800"
-                        : pct >= 50
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-red-100 text-red-800";
-
-                    return (
-                      <tr
-                        key={c.corporationId || c._id}
-                        className="hover:bg-slate-50"
+        {activeSection === "summary" && (
+          <>
+            {/* Corporation-wise report */}
+            <Card title="Corporation Report" titleMr="महामंडळ-वार अहवाल">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="text-sm text-slate-600">
+                  {t(
+                    "महामंडळानुसार नोंदी आणि कामगिरीचा जलद आढावा.",
+                    "Quick view of entries and performance by corporation.",
+                  )}
+                </div>
+                <button
+                  onClick={exportToExcel}
+                  disabled={exporting || loading}
+                  className="px-4 py-2 bg-green-700 text-white rounded-xl hover:bg-green-800 disabled:opacity-50 transition-colors flex items-center gap-2"
+                >
+                  {exporting ? (
+                    <>
+                      <svg
+                        className="animate-spin h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
                       >
-                        <td className="px-4 py-3 font-semibold text-slate-800">
-                          {c.corporationCode || c._id || "N/A"}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-700">
-                          {(Number(c.count) || 0).toLocaleString("en-IN")}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-700">
-                          {formatNumber(target)}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-700">
-                          {formatNumber(achievement)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-bold ${pill}`}
-                          >
-                            {pct.toFixed(1)}%
-                          </span>
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                        />
+                      </svg>
+                      {t("निर्यात करत आहे...", "Exporting...")}
+                    </>
+                  ) : (
+                    <>📥 {t("एक्सेल निर्यात (XLSX)", "Export Excel (XLSX)")}</>
+                  )}
+                </button>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        {t("महामंडळ", "Corporation")}
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        {t("नोंदी", "Entries")}
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        {t("लक्ष्य", "Target")}
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        {t("साध्य", "Achievement")}
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        %
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {loading ? (
+                      <tr>
+                        <td className="px-4 py-5 text-slate-500" colSpan={5}>
+                          {t("लोड होत आहे...", "Loading...")}
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+                    ) : byCorporation.length === 0 ? (
+                      <tr>
+                        <td className="px-4 py-5 text-slate-500" colSpan={5}>
+                          {t(
+                            "निवडलेल्या फिल्टरसाठी डेटा नाही.",
+                            "No data for selected filters.",
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      byCorporation.map((c) => {
+                        const target = Number(c.totalTarget) || 0;
+                        const achievement = Number(c.totalAchievement) || 0;
+                        const pct =
+                          target > 0 ? (achievement / target) * 100 : 0;
 
-        {/* Report checklist */}
-        <Card title="Report Checklist" titleMr="अहवाल चेकलिस्ट">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-              <h3 className="font-bold text-slate-800">Data Quality</h3>
-              <ul className="mt-2 text-sm text-slate-600 space-y-1">
-                <li>
-                  • Ensure correct Corporation → Region → Circle selection.
-                </li>
-                <li>
-                  • Select correct achievement date inside financial year.
-                </li>
-                <li>• Fill only the KRAs you want (others stay 0).</li>
-              </ul>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-              <h3 className="font-bold text-slate-800">Quick Actions</h3>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Link
-                  to="/dashboard"
-                  className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold"
-                >
-                  View Charts
-                </Link>
-                <Link
-                  to="/data-entry"
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
-                >
-                  Add Monthly Entry
-                </Link>
-                <Link
-                  to="/admin"
-                  className="px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold"
-                >
-                  Admin Panel
-                </Link>
+                        const pill =
+                          pct >= 80
+                            ? "bg-green-100 text-green-800"
+                            : pct >= 50
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-red-100 text-red-800";
+
+                        return (
+                          <tr
+                            key={c.corporationId || c._id}
+                            className="hover:bg-slate-50"
+                          >
+                            <td className="px-4 py-3 font-semibold text-slate-800">
+                              {c.corporationCode || c._id || "N/A"}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-700">
+                              {(Number(c.count) || 0).toLocaleString("en-IN")}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-700">
+                              {formatNumber(target)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-700">
+                              {formatNumber(achievement)}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-xs font-bold ${pill}`}
+                              >
+                                {pct.toFixed(1)}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
-              <p className="mt-3 text-xs text-slate-500">
-                Note: Admin Panel access depends on your role.
-              </p>
+            </Card>
+
+            {/* Report checklist */}
+            <Card title="Report Checklist" titleMr="अहवाल चेकलिस्ट">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <h3 className="font-bold text-slate-800">Data Quality</h3>
+                  <ul className="mt-2 text-sm text-slate-600 space-y-1">
+                    <li>
+                      • Ensure correct Corporation → Region → Circle selection.
+                    </li>
+                    <li>
+                      • Select correct achievement date inside financial year.
+                    </li>
+                    <li>• Fill only the KRAs you want (others stay 0).</li>
+                  </ul>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <h3 className="font-bold text-slate-800">Quick Actions</h3>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Link
+                      to="/dashboard"
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold"
+                    >
+                      View Charts
+                    </Link>
+                    <Link
+                      to="/data-entry"
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                    >
+                      Add Monthly Entry
+                    </Link>
+                    <Link
+                      to="/admin"
+                      className="px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold"
+                    >
+                      Admin Panel
+                    </Link>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Note: Admin Panel access depends on your role.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </>
+        )}
+
+        {activeSection === "entries" && (
+          <Card title="All Entries" titleMr="सर्व नोंदी">
+            <div className="space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div>
+                  <p className="text-sm text-slate-600">
+                    {isPrivilegedUser
+                      ? t(
+                          "सर्व नोंदींचे रिअल-टाइम दृश्य (ऑटो रिफ्रेश: 10 सेकंद)",
+                          "Real-time view of all entries (auto-refresh: 10s)",
+                        )
+                      : t(
+                          "तुमच्या नोंदींचे रिअल-टाइम दृश्य (ऑटो रिफ्रेश: 10 सेकंद)",
+                          "Real-time view of your entries (auto-refresh: 10s)",
+                        )}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {t("शेवटचे अपडेट:", "Last updated:")}{" "}
+                    {entriesLastRefresh.toLocaleTimeString("en-IN")}
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={entrySearch}
+                    onChange={(e) => setEntrySearch(e.target.value)}
+                    placeholder={t(
+                      "शोधा (KRA, टिप्पणी, संपर्क)",
+                      "Search (KRA, remarks, contact)",
+                    )}
+                    className="px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    onClick={() => fetchMyEntries()}
+                    className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all"
+                  >
+                    🔄 {t("रिफ्रेश", "Refresh")}
+                  </button>
+                </div>
+              </div>
+
+              {entriesError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
+                  ❌ {entriesError}
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                {entriesLoading ? (
+                  <div className="p-6 text-slate-600">
+                    {t("नोंदी लोड होत आहेत...", "Loading entries...")}
+                  </div>
+                ) : filteredMyEntries.length === 0 ? (
+                  <div className="p-10 text-center">
+                    <div className="text-5xl mb-3">📭</div>
+                    <p className="text-slate-700 font-semibold">
+                      {t("नोंदी आढळल्या नाहीत", "No entries found")}
+                    </p>
+                    <p className="text-slate-500 text-sm mt-1">
+                      {t(
+                        "फिल्टर/शोध बदलून पुन्हा प्रयत्न करा.",
+                        "Try changing filters/search and refresh.",
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gradient-to-r from-slate-800 to-slate-700">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("महामंडळ", "Corporation")}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("KRA", "KRA")}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("वर्ष", "Year")}
+                            </th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("लक्ष्य", "Target")}
+                            </th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("साध्य", "Achievement")}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("महिना/वर्ष", "Month/Year")}
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                              {t("सबमिट केले", "Submitted By")}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedMyEntries.map((entry, idx) => {
+                            const totalTarget = sumNumberField(
+                              entry.kras,
+                              "annualTarget",
+                            );
+                            const totalAchievement = sumNumberField(
+                              entry.kras,
+                              "kraAchievement",
+                            );
+                            const selectedIds = getSelectedKraIds(entry);
+
+                            return (
+                              <tr
+                                key={entry._id}
+                                className={`hover:bg-slate-50 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
+                              >
+                                <td className="px-4 py-3">
+                                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">
+                                    {entry?.corporation?.code ||
+                                      entry?.corporationName ||
+                                      "N/A"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="max-w-[240px]">
+                                    <p className="text-sm font-medium text-slate-700 truncate">
+                                      {selectedIds.length > 0
+                                        ? `KRAs: ${selectedIds.join(", ")}`
+                                        : "KRAs: -"}
+                                    </p>
+                                    <p className="text-xs text-slate-400 truncate">
+                                      {selectedIds.length > 0
+                                        ? `${selectedIds.length} selected`
+                                        : t("KRA मूल्य नाही", "No KRA values")}
+                                    </p>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-slate-700">
+                                  {entry.kraYear}
+                                </td>
+                                <td className="px-4 py-3 text-right font-medium text-slate-700">
+                                  {totalTarget.toLocaleString("en-IN")}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-lg font-bold">
+                                    {totalAchievement.toLocaleString("en-IN")}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  {MONTH_NAMES_MARATHI[
+                                    entry?.achievementMonth
+                                  ] || entry?.achievementMonth}{" "}
+                                  {entry?.achievementYear}
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  <p className="text-sm">
+                                    {entry.submittedBy || "-"}
+                                  </p>
+                                  <p className="text-xs text-slate-400">
+                                    {entry?.createdAt
+                                      ? new Date(
+                                          entry.createdAt,
+                                        ).toLocaleDateString("en-IN")
+                                      : "-"}
+                                  </p>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                      <p className="text-sm text-slate-600">
+                        {t("दाखवत आहे", "Showing")}{" "}
+                        <strong>{paginatedMyEntries.length}</strong>{" "}
+                        {t("पैकी", "of")}{" "}
+                        <strong>{filteredMyEntries.length}</strong>{" "}
+                        {t("नोंदी", "entries")}
+                      </p>
+
+                      <div className="flex gap-2">
+                        <button
+                          disabled={entryPage === 1}
+                          onClick={() =>
+                            setEntryPage((p) => Math.max(1, p - 1))
+                          }
+                          className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          ← {t("मागे", "Prev")}
+                        </button>
+                        <span className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold">
+                          {entryPage} / {totalEntryPages}
+                        </span>
+                        <button
+                          disabled={entryPage === totalEntryPages}
+                          onClick={() =>
+                            setEntryPage((p) =>
+                              Math.min(totalEntryPages, p + 1),
+                            )
+                          }
+                          className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {t("पुढे", "Next")} →
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
     </div>
   );
