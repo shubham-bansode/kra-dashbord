@@ -94,13 +94,26 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const updateLocalUser = (nextUser) => {
+    setUser(nextUser || null);
+  };
+
   useEffect(() => {
     refreshMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const value = useMemo(
-    () => ({ token, user, isLoading, login, register, logout, refreshMe }),
+    () => ({
+      token,
+      user,
+      isLoading,
+      login,
+      register,
+      logout,
+      refreshMe,
+      updateLocalUser,
+    }),
     [token, user, isLoading],
   );
 

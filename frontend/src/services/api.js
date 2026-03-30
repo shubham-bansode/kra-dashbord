@@ -94,7 +94,49 @@ export const kraEntryApi = {
 export const authApi = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
-  me: () => api.get('/auth/me')
+  me: () => api.get('/auth/me'),
+  updateProfile: async (data) => {
+    try {
+      return await api.put('/auth/profile', data);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+    }
+
+    try {
+      return await api.patch('/auth/profile', data);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+    }
+
+    try {
+      return await api.post('/auth/profile', data);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+    }
+
+    return api.put('/auth/update-profile', data);
+  },
+  changePassword: async (data) => {
+    try {
+      return await api.put('/auth/change-password', data);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+    }
+
+    try {
+      return await api.patch('/auth/change-password', data);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+    }
+
+    try {
+      return await api.post('/auth/change-password', data);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+    }
+
+    return api.put('/auth/password', data);
+  }
 };
 
 // Dashboard API

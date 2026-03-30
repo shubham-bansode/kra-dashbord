@@ -30,12 +30,12 @@ const HomePage = () => {
     },
     {
       id: 2,
-      title: "प्रकल्प निरीक्षण",
-      titleEn: "Project Monitoring",
-      description: "सर्कल नुसार केआरए निरीक्षण डॅशबोर्ड",
-      descriptionEn: "Circle-wise KRA Monitoring Dashboard",
+      title: "प्रकल्प अहवाल",
+      titleEn: "Project Report",
+      description: "केआरए अहवाल डॅशबोर्ड",
+      descriptionEn: "KRA Report Dashboard",
       icon: "🌊",
-      path: "/monitoring",
+      path: "/report",
       color: "from-cyan-500 to-cyan-700",
     },
     {
@@ -77,15 +77,12 @@ const HomePage = () => {
 
           <div className="text-center max-w-4xl mx-auto mb-12">
             <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-              {t(
-                "सर्कल नुसार केआरए निरीक्षण डॅशबोर्ड",
-                "Circle-wise KRA Monitoring Dashboard",
-              )}
+              {t("केआरए अहवाल डॅशबोर्ड", "KRA Report Dashboard")}
             </h1>
             <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
               {t(
-                "Key Result Areas (KRA) कार्यप्रदर्शन निरीक्षण आणि डेटा व्यवस्थापन प्रणाली",
-                "Key Result Areas (KRA) Performance Monitoring & Data Management System",
+                "Key Result Areas (KRA) कार्यप्रदर्शन अहवाल आणि डेटा व्यवस्थापन प्रणाली",
+                "Key Result Areas (KRA) Performance Report & Data Management System",
               )}
             </p>
           </div>
@@ -102,44 +99,11 @@ const HomePage = () => {
             </button>
             <button
               type="button"
-              onClick={() => handleCardClick("/monitoring")}
+              onClick={() => handleCardClick("/report")}
               className="px-8 py-4 rounded-lg bg-white hover:bg-gray-50 text-blue-600 font-semibold text-lg border-2 border-blue-600 transition-all transform hover:scale-105"
             >
-              {t("निरीक्षण पहा →", "View Monitoring →")}
+              {t("अहवाल पहा →", "View Report →")}
             </button>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="text-center">
-                <div className="text-4xl font-bold text-blue-600 mb-2">5</div>
-                <p className="text-sm font-semibold text-gray-700">
-                  {t("जल महामंडळे", "Water Corporations")}
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-green-600 mb-2">7</div>
-                <p className="text-sm font-semibold text-gray-700">
-                  {t("KRA प्रकार", "KRA Types")}
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-cyan-600 mb-2">
-                  100+
-                </div>
-                <p className="text-sm font-semibold text-gray-700">
-                  {t("सर्कल", "Circles")}
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-orange-600 mb-2">
-                  24/7
-                </div>
-                <p className="text-sm font-semibold text-gray-700">
-                  {t("उपलब्ध", "Available")}
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -270,17 +234,17 @@ const HomePage = () => {
             <div className="mt-8 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
               <p className="text-sm text-gray-600">
                 {t(
-                  "अधिक माहितीसाठी निरीक्षण विभाग पहा",
-                  "View Monitoring section for more information",
+                  "अधिक माहितीसाठी अहवाल विभाग पहा",
+                  "View Report section for more information",
                 )}
               </p>
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => handleCardClick("/monitoring")}
+                  onClick={() => handleCardClick("/report")}
                   className="px-5 py-2.5 rounded-lg bg-white hover:bg-gray-50 text-blue-600 font-semibold text-sm border-2 border-blue-600 transition"
                 >
-                  {t("निरीक्षण →", "Monitoring →")}
+                  {t("अहवाल →", "Report →")}
                 </button>
               </div>
             </div>
@@ -299,8 +263,8 @@ const HomePage = () => {
             </p>
             <p className="text-sm text-gray-400">
               {t(
-                "Key Result Areas (KRA) कार्यप्रदर्शन निरीक्षण प्रणाली",
-                "Key Result Areas (KRA) Performance Monitoring System",
+                "Key Result Areas (KRA) कार्यप्रदर्शन अहवाल प्रणाली",
+                "Key Result Areas (KRA) Performance Report System",
               )}
             </p>
           </div>

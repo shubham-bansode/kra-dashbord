@@ -395,7 +395,7 @@ function AutoToast({
 // ADMIN PANEL COMPONENT
 // ==========================================
 export default function AdminPanel() {
-  const { user } = useAuth();
+  const { user, refreshMe } = useAuth();
   const { t } = useLanguage();
   const [activeSection, setActiveSection] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -405,6 +405,11 @@ export default function AdminPanel() {
 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const isSuperAdmin = user?.role === "superadmin";
+
+  useEffect(() => {
+    refreshMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load master KRAs for filters & displays
   useEffect(() => {
@@ -1539,6 +1544,7 @@ function EntriesSection({ kraOptions, setError, setSuccess }) {
       {viewingEntry && (
         <ViewEntryModal
           entry={viewingEntry}
+          kraOptions={effectiveKraOptions}
           onClose={() => setViewingEntry(null)}
         />
       )}
@@ -1583,8 +1589,12 @@ function EntriesSection({ kraOptions, setError, setSuccess }) {
 // ==========================================
 // VIEW ENTRY MODAL
 // ==========================================
-function ViewEntryModal({ entry, onClose }) {
+function ViewEntryModal({ entry, kraOptions, onClose }) {
   const { t, language } = useLanguage();
+  const effectiveKraOptions =
+    Array.isArray(kraOptions) && kraOptions.length > 0
+      ? kraOptions
+      : DEFAULT_KRA_OPTIONS;
   const totalTarget = sumNumberField(entry?.kras, "annualTarget");
   const totalAchievement = sumNumberField(entry?.kras, "kraAchievement");
   const selectedIds = getSelectedKraIds(entry);
@@ -3413,7 +3423,7 @@ function SettingsSection({ isSuperAdmin, setError, setSuccess }) {
           System Information
         </h3>
         <div className="grid grid-cols-2 gap-4">
-          <InfoItem label="Application" value="KRA Monitoring System" />
+          <InfoItem label="Application" value="KRA Report System" />
           <InfoItem label="Version" value="1.0.0" />
           <InfoItem label="Department" value="जलसंपदा विभाग" />
           <InfoItem label="Organization" value="बांधकाम कामगार विभाग" />

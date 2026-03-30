@@ -21,6 +21,26 @@ const {
   isAllowedCircleName
 } = require('../config/googleFormHierarchy');
 
+const isSuperAdmin = (req) => String(req?.user?.role || '') === 'superadmin';
+
+const scopedCorporationId = (req) => {
+  if (isSuperAdmin(req)) return null;
+  const corp = req?.user?.corporation;
+  return corp ? String(corp) : null;
+};
+
+const applyCorporationScope = (req, filter, field = 'corporation') => {
+  const corpId = scopedCorporationId(req);
+  if (!corpId) return;
+  filter[field] = new mongoose.Types.ObjectId(corpId);
+};
+
+const hasCorpAccess = (req, corpId) => {
+  if (isSuperAdmin(req)) return true;
+  const scoped = scopedCorporationId(req);
+  return Boolean(scoped) && String(scoped) === String(corpId || '');
+};
+
 // ==========================================
 // FINANCIAL YEAR MANAGEMENT
 // ==========================================
@@ -87,6 +107,13 @@ router.post('/financial-years',
           success: false,
           message: 'Validation failed',
           errors: errors.array()
+        });
+      }
+
+      if (!isSuperAdmin(req) && !hasCorpAccess(req, req.body.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can create entries only for your corporation'
         });
       }
 
@@ -298,6 +325,9 @@ router.get('/entries',
         ];
       }
 
+      // Non-superadmins can only access their own corporation data.
+      applyCorporationScope(req, filter);
+
       const skip = (parseInt(page) - 1) * parseInt(limit);
       const sortOptions = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
 
@@ -351,6 +381,13 @@ router.get('/entries/:id',
         return res.status(404).json({
           success: false,
           message: 'Entry not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, entry.corporation?._id || entry.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can access only your corporation hierarchy'
         });
       }
 
@@ -485,6 +522,28 @@ router.put('/entries/:id',
       const { id } = req.params;
       const updates = { ...req.body };
 
+      const existingEntry = await KraMonthlyEntry.findById(id).select('corporation');
+      if (!existingEntry) {
+        return res.status(404).json({
+          success: false,
+          message: 'Entry not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, existingEntry.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can update only your corporation entries'
+        });
+      }
+
+      if (!isSuperAdmin(req) && updates.corporation && !hasCorpAccess(req, updates.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You cannot move entry to another corporation'
+        });
+      }
+
       delete updates._id;
       delete updates.createdAt;
       delete updates.updatedAt;
@@ -571,6 +630,21 @@ router.delete('/entries/:id',
         });
       }
 
+      const existingEntry = await KraMonthlyEntry.findById(req.params.id).select('corporation');
+      if (!existingEntry) {
+        return res.status(404).json({
+          success: false,
+          message: 'Entry not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, existingEntry.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can delete only your corporation entries'
+        });
+      }
+
       const entry = await KraMonthlyEntry.findByIdAndDelete(req.params.id);
 
       if (!entry) {
@@ -610,7 +684,9 @@ router.delete('/entries',
       }
 
       const { ids } = req.body;
-      const result = await KraMonthlyEntry.deleteMany({ _id: { $in: ids } });
+      const bulkFilter = { _id: { $in: ids } };
+      applyCorporationScope(req, bulkFilter);
+      const result = await KraMonthlyEntry.deleteMany(bulkFilter);
 
       res.json({
         success: true,
@@ -628,7 +704,7 @@ router.delete('/entries',
 
 // POST /api/admin/entries/wipe - DANGER: Delete ALL KRA entry submissions
 router.post('/entries/wipe',
-  superadminAuth,
+  adminAuth,
   [body('confirm').equals('DELETE_KRA_ENTRIES').withMessage('Invalid confirmation')],
   async (req, res) => {
     try {
@@ -641,11 +717,15 @@ router.post('/entries/wipe',
         });
       }
 
-      const result = await KraMonthlyEntry.deleteMany({});
+      const wipeFilter = {};
+      applyCorporationScope(req, wipeFilter);
+      const result = await KraMonthlyEntry.deleteMany(wipeFilter);
 
       res.json({
         success: true,
-        message: `Deleted ${result.deletedCount} KRA entry submissions`,
+        message: isSuperAdmin(req)
+          ? `Deleted ${result.deletedCount} KRA entry submissions`
+          : `Deleted ${result.deletedCount} KRA entry submissions for your corporation`,
         deletedCount: result.deletedCount
       });
     } catch (error) {
@@ -677,6 +757,11 @@ router.get('/users',
           { fullName: { $regex: search, $options: 'i' } },
           { mobileNumber: { $regex: search, $options: 'i' } }
         ];
+      }
+
+      if (!isSuperAdmin(req)) {
+        const corpId = scopedCorporationId(req);
+        filter.corporation = corpId ? new mongoose.Types.ObjectId(corpId) : null;
       }
 
       const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -715,7 +800,7 @@ router.get('/users',
 
 // PUT /api/admin/users/:id/role - Update user role
 router.put('/users/:id/role',
-  superadminAuth,
+  adminAuth,
   [
     param('id').isMongoId(),
     body('role').isIn(['user', 'admin', 'superadmin'])
@@ -728,6 +813,35 @@ router.put('/users/:id/role',
           success: false,
           message: 'Validation failed',
           errors: errors.array()
+        });
+      }
+
+      if (!isSuperAdmin(req) && req.body.role === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - Only superadmin can assign superadmin role'
+        });
+      }
+
+      const targetUser = await User.findById(req.params.id).select('corporation role');
+      if (!targetUser) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, targetUser.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can update roles only in your corporation'
+        });
+      }
+
+      if (!isSuperAdmin(req) && targetUser.role === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You cannot modify superadmin role'
         });
       }
 
@@ -765,12 +879,26 @@ router.put('/users/:id/status',
   [param('id').isMongoId()],
   async (req, res) => {
     try {
-      const user = await User.findById(req.params.id);
+      const user = await User.findById(req.params.id).select('role corporation isActive');
       
       if (!user) {
         return res.status(404).json({
           success: false,
           message: 'User not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, user.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can update status only in your corporation'
+        });
+      }
+
+      if (!isSuperAdmin(req) && user.role === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You cannot change superadmin status'
         });
       }
 
@@ -795,7 +923,7 @@ router.put('/users/:id/status',
 // POST /api/admin/users - Create a new user (superadmin)
 router.post(
   '/users',
-  superadminAuth,
+  adminAuth,
   [
     body('corporation').notEmpty().withMessage('Corporation is required').isMongoId().withMessage('Invalid Corporation ID'),
     body('fullName').notEmpty().withMessage('Full name is required').isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
@@ -816,7 +944,32 @@ router.post(
 
       const { corporation, fullName, mobileNumber, password, role } = req.body;
 
-      const corp = await Corporation.findById(corporation);
+      if (!isSuperAdmin(req) && role === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - Only superadmin can create superadmin'
+        });
+      }
+
+      const targetCorporation = isSuperAdmin(req)
+        ? corporation
+        : String(req.user.corporation || '');
+
+      if (!targetCorporation) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - Admin corporation scope is missing'
+        });
+      }
+
+      if (!isSuperAdmin(req) && String(corporation) !== targetCorporation) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can create users only in your corporation'
+        });
+      }
+
+      const corp = await Corporation.findById(targetCorporation);
       if (!corp) {
         return res.status(400).json({
           success: false,
@@ -834,7 +987,7 @@ router.post(
 
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await User.create({
-        corporation,
+        corporation: targetCorporation,
         fullName,
         mobileNumber,
         passwordHash,
@@ -863,7 +1016,7 @@ router.post(
 // PUT /api/admin/users/:id - Update user details (superadmin)
 router.put(
   '/users/:id',
-  superadminAuth,
+  adminAuth,
   [
     param('id').isMongoId().withMessage('Invalid ID'),
     body('corporation').optional().isMongoId().withMessage('Invalid Corporation ID'),
@@ -887,6 +1040,28 @@ router.put(
       const { id } = req.params;
       const updates = {};
 
+      const targetUser = await User.findById(id).select('role corporation');
+      if (!targetUser) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, targetUser.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can update users only in your corporation'
+        });
+      }
+
+      if (!isSuperAdmin(req) && targetUser.role === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You cannot update superadmin user'
+        });
+      }
+
       if (typeof req.body.fullName === 'string') updates.fullName = req.body.fullName;
       if (typeof req.body.mobileNumber === 'string') updates.mobileNumber = req.body.mobileNumber;
       if (typeof req.body.corporation === 'string') updates.corporation = req.body.corporation;
@@ -906,6 +1081,12 @@ router.put(
       }
 
       if (updates.corporation) {
+        if (!isSuperAdmin(req) && !hasCorpAccess(req, updates.corporation)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden - You cannot move user to another corporation'
+          });
+        }
         const corp = await Corporation.findById(updates.corporation);
         if (!corp) {
           return res.status(400).json({
@@ -944,7 +1125,7 @@ router.put(
 // DELETE /api/admin/users/:id - Delete user (superadmin)
 router.delete(
   '/users/:id',
-  superadminAuth,
+  adminAuth,
   [param('id').isMongoId().withMessage('Invalid ID')],
   async (req, res) => {
     try {
@@ -965,11 +1146,25 @@ router.delete(
         });
       }
 
-      const user = await User.findById(id).select('role');
+      const user = await User.findById(id).select('role corporation isActive');
       if (!user) {
         return res.status(404).json({
           success: false,
           message: 'User not found'
+        });
+      }
+
+      if (!hasCorpAccess(req, user.corporation)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can delete users only in your corporation'
+        });
+      }
+
+      if (!isSuperAdmin(req) && user.role === 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You cannot delete superadmin'
         });
       }
 
@@ -1006,6 +1201,12 @@ router.delete(
 // GET /api/admin/stats - Get admin dashboard statistics
 router.get('/stats', adminAuth, async (req, res) => {
   try {
+    const corpScope = scopedCorporationId(req);
+    const entryFilter = corpScope ? { corporation: new mongoose.Types.ObjectId(corpScope) } : {};
+    const userFilter = corpScope
+      ? { isActive: true, corporation: new mongoose.Types.ObjectId(corpScope) }
+      : { isActive: true };
+
     const [
       totalEntries,
       totalUsers,
@@ -1015,15 +1216,16 @@ router.get('/stats', adminAuth, async (req, res) => {
       entriesByMonth,
       entriesByCorporation
     ] = await Promise.all([
-      KraMonthlyEntry.countDocuments(),
-      User.countDocuments({ isActive: true }),
-      Corporation.countDocuments(),
+      KraMonthlyEntry.countDocuments(entryFilter),
+      User.countDocuments(userFilter),
+      corpScope ? Corporation.countDocuments({ _id: new mongoose.Types.ObjectId(corpScope) }) : Corporation.countDocuments(),
       FinancialYear.getActive(),
-      KraMonthlyEntry.find()
+      KraMonthlyEntry.find(entryFilter)
         .sort({ createdAt: -1 })
         .limit(10)
         .populate('corporation', 'name code'),
       KraMonthlyEntry.aggregate([
+        { $match: entryFilter },
         {
           $group: {
             _id: { month: '$achievementMonth', year: '$achievementYear' },
@@ -1034,6 +1236,7 @@ router.get('/stats', adminAuth, async (req, res) => {
         { $limit: 12 }
       ]),
       KraMonthlyEntry.aggregate([
+        { $match: entryFilter },
         {
           $lookup: {
             from: 'corporations',
@@ -1085,7 +1288,12 @@ router.get('/stats', adminAuth, async (req, res) => {
 // GET /api/admin/corporations - List corporations (admin)
 router.get('/corporations', adminAuth, async (req, res) => {
   try {
-    const corporations = await Corporation.find().sort({ name: 1 });
+    let corpFilter = {};
+    const corpScope = scopedCorporationId(req);
+    if (corpScope) {
+      corpFilter = { _id: new mongoose.Types.ObjectId(corpScope) };
+    }
+    const corporations = await Corporation.find(corpFilter).sort({ name: 1 });
     return res.json({
       success: true,
       data: corporations
@@ -1099,10 +1307,10 @@ router.get('/corporations', adminAuth, async (req, res) => {
   }
 });
 
-// PUT /api/admin/corporations/:id - Rename corporation (superadmin)
+// PUT /api/admin/corporations/:id - Rename corporation (scoped for admin)
 router.put(
   '/corporations/:id',
-  superadminAuth,
+  adminAuth,
   [
     param('id').isMongoId().withMessage('Invalid ID'),
     body('name').notEmpty().withMessage('Corporation name is required').isLength({ min: 2 }).withMessage('Corporation name must be at least 2 characters')
@@ -1120,6 +1328,13 @@ router.put(
 
       const { id } = req.params;
       const name = String(req.body.name || '').trim();
+
+      if (!hasCorpAccess(req, id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden - You can rename only your corporation'
+        });
+      }
 
       const existing = await Corporation.findOne({ name, _id: { $ne: id } });
       if (existing) {
@@ -1160,9 +1375,16 @@ router.put(
 // GET /api/admin/dropdown-data - Get all dropdown data for forms
 router.get('/dropdown-data', adminAuth, async (req, res) => {
   try {
+    const corpScope = scopedCorporationId(req);
+    const corpFilter = corpScope
+      ? { _id: new mongoose.Types.ObjectId(corpScope) }
+      : {};
+
     const [corporations, regions, circles, kras, financialYears] = await Promise.all([
-      Corporation.find().select('name code hasRegions').sort('name'),
-      Region.find().populate('corporation', 'name code').sort('name'),
+      Corporation.find(corpFilter).select('name code hasRegions').sort('name'),
+      Region.find(corpScope ? { corporation: new mongoose.Types.ObjectId(corpScope) } : {})
+        .populate('corporation', 'name code')
+        .sort('name'),
       Circle.find()
         .populate('region', '_id name')
         .populate('corporation', 'name code')
@@ -1171,10 +1393,14 @@ router.get('/dropdown-data', adminAuth, async (req, res) => {
       FinancialYear.find().sort({ startDate: -1 })
     ]);
 
+    const circlesScoped = corpScope
+      ? circles.filter((c) => String(c?.corporation?._id || c?.corporation || '') === String(corpScope))
+      : circles;
+
     const allowedCorporations = new Set(getAllowedCorporationNames());
     const filteredCorporations = corporations.filter((c) => allowedCorporations.has(String(c?.name || '').trim()));
     const filteredRegions = regions.filter((r) => isAllowedRegionName(r?.corporation?.name, r?.name));
-    const filteredCircles = circles.filter((c) => isAllowedCircleName(c?.corporation?.name, c?.region?.name, c?.name));
+    const filteredCircles = circlesScoped.filter((c) => isAllowedCircleName(c?.corporation?.name, c?.region?.name, c?.name));
 
     res.json({
       success: true,

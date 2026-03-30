@@ -19,23 +19,6 @@ function Card({ title, titleMr, children }) {
   );
 }
 
-function StatTile({
-  label,
-  value,
-  subtitle,
-  color = "from-indigo-600 to-purple-600",
-}) {
-  return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
-      <div className={`px-5 py-4 bg-gradient-to-r ${color}`}>
-        <p className="text-xs text-white/80 font-semibold">{label}</p>
-        <p className="text-3xl text-white font-extrabold mt-1">{value}</p>
-        {subtitle && <p className="text-xs text-white/80 mt-1">{subtitle}</p>}
-      </div>
-    </div>
-  );
-}
-
 function formatNumber(value) {
   const num = Number(value) || 0;
   return num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -164,7 +147,7 @@ export default function Monitoring() {
       setByCorporation(corpRes.data?.data || []);
       setLastRefresh(new Date());
     } catch (e) {
-      setError(e?.response?.data?.message || "Failed to load monitoring data");
+      setError(e?.response?.data?.message || "Failed to load report data");
     } finally {
       setLoading(false);
     }
@@ -279,7 +262,7 @@ export default function Monitoring() {
 
       // Generate filename
       const dateStr = new Date().toISOString().slice(0, 10);
-      const filename = `KRA_Monitoring_Sheet_${dateStr}.xlsx`;
+      const filename = `KRA_Report_Sheet_${dateStr}.xlsx`;
 
       // Download
       XLSX.writeFile(workbook, filename);
@@ -302,12 +285,12 @@ export default function Monitoring() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-extrabold text-white">
-                  {t("निरीक्षण", "Monitoring")}
+                  {t("अहवाल", "Report")}
                 </h1>
                 <p className="text-sm text-white/80 mt-1">
                   {t(
-                    "सर्कलनुसार KRA निरीक्षण सारांश, फिल्टर आणि जलद कृती.",
-                    "Circle-wise KRA monitoring summary, filters, and quick actions.",
+                    "KRA अहवाल सारांश, फिल्टर आणि जलद कृती.",
+                    "KRA report summary, filters, and quick actions.",
                   )}
                 </p>
               </div>
@@ -422,36 +405,8 @@ export default function Monitoring() {
           </div>
         </div>
 
-        {/* KPI row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatTile
-            label={t("एकूण नोंदी", "Total Entries")}
-            value={loading ? "…" : formatNumber(summary?.totalEntries || 0)}
-            color="from-blue-600 to-cyan-600"
-          />
-          <StatTile
-            label={t("एकूण लक्ष्य", "Total Target")}
-            value={loading ? "…" : formatNumber(summary?.totalTarget || 0)}
-            color="from-indigo-600 to-purple-600"
-          />
-          <StatTile
-            label={t("एकूण साध्य", "Total Achievement")}
-            value={loading ? "…" : formatNumber(summary?.totalAchievement || 0)}
-            color="from-emerald-600 to-green-600"
-          />
-          <StatTile
-            label={t("साध्य %", "Achievement %")}
-            value={
-              loading
-                ? "…"
-                : `${Number(summary?.achievementPercentage || 0).toFixed(1)}%`
-            }
-            color="from-orange-600 to-amber-600"
-          />
-        </div>
-
-        {/* Corporation-wise monitoring */}
-        <Card title="Corporation Monitoring" titleMr="महामंडळ-वार निरीक्षण">
+        {/* Corporation-wise report */}
+        <Card title="Corporation Report" titleMr="महामंडळ-वार अहवाल">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="text-sm text-slate-600">
               {t(
@@ -576,8 +531,8 @@ export default function Monitoring() {
           </div>
         </Card>
 
-        {/* Monitoring checklist */}
-        <Card title="Monitoring Checklist" titleMr="निरीक्षण चेकलिस्ट">
+        {/* Report checklist */}
+        <Card title="Report Checklist" titleMr="अहवाल चेकलिस्ट">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
               <h3 className="font-bold text-slate-800">Data Quality</h3>

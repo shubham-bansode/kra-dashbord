@@ -71,7 +71,7 @@ export default function AuthPage() {
             </div>
           </Link>
           <h1 className="text-2xl font-bold text-gray-800">
-            {t("KRA निरीक्षण प्रणाली", "KRA Monitoring System")}
+            {t("KRA अहवाल प्रणाली", "KRA Report System")}
           </h1>
           <p className="text-sm text-gray-600">{t()}</p>
         </div>

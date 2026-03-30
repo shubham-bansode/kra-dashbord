@@ -29,7 +29,7 @@ async function adminAuth(req, res, next) {
     const payload = jwt.verify(token, getJwtSecret());
     
     // Fetch the user to check role
-    const user = await User.findById(payload.userId).select('role fullName mobileNumber isActive');
+    const user = await User.findById(payload.userId).select('role fullName mobileNumber corporation isActive');
     
     if (!user) {
       return res.status(401).json({
@@ -57,7 +57,8 @@ async function adminAuth(req, res, next) {
       userId: user._id,
       role: user.role,
       fullName: user.fullName,
-      mobileNumber: user.mobileNumber
+      mobileNumber: user.mobileNumber,
+      corporation: user.corporation || null
     };
     
     next();
@@ -97,7 +98,7 @@ async function superadminAuth(req, res, next) {
     }
 
     const payload = jwt.verify(token, getJwtSecret());
-    const user = await User.findById(payload.userId).select('role fullName mobileNumber isActive');
+    const user = await User.findById(payload.userId).select('role fullName mobileNumber corporation isActive');
     
     if (!user || !user.isActive) {
       return res.status(401).json({
@@ -117,7 +118,8 @@ async function superadminAuth(req, res, next) {
       userId: user._id,
       role: user.role,
       fullName: user.fullName,
-      mobileNumber: user.mobileNumber
+      mobileNumber: user.mobileNumber,
+      corporation: user.corporation || null
     };
     
     next();

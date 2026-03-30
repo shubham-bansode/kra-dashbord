@@ -47,7 +47,7 @@ const GlobalHeader = () => {
     { path: "/", label: { en: "Home", mr: "मुख्यपृष्ठ" } },
     { path: "/data-entry", label: { en: "Data Entry", mr: "डेटा एंट्री" } },
     { path: "/dashboard", label: { en: "Dashboard", mr: "डॅशबोर्ड" } },
-    { path: "/monitoring", label: { en: "Monitoring", mr: "निरीक्षण" } },
+    { path: "/report", label: { en: "Report", mr: "अहवाल" } },
   ];
 
   return (
@@ -71,7 +71,7 @@ const GlobalHeader = () => {
                   जलसंपदा विभाग
                 </h1>
                 <p className="text-blue-200 text-[10px] leading-tight">
-                  KRA Monitoring System
+                  KRA Report System
                 </p>
               </div>
             </div>
@@ -168,6 +168,17 @@ const GlobalHeader = () => {
                           <span className="text-base">⚙️</span> Admin Panel
                         </button>
                       )}
+
+                      <button
+                        onClick={() => {
+                          setShowProfileDropdown(false);
+                          navigate("/profile");
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <span className="text-base">👤</span>
+                        {t("प्रोफाइल अपडेट", "Profile Update")}
+                      </button>
 
                       {/* Logout */}
                       <div className="border-t border-gray-100">

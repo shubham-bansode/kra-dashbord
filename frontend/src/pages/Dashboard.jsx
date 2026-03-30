@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   BarChart,
   Bar,
@@ -58,42 +57,6 @@ const LoadingSpinner = () => (
     <p className="text-sm font-semibold text-slate-500 animate-pulse">
       Loading dashboard…
     </p>
-  </div>
-);
-
-/* ── Stat card ── */
-const StatCard = ({ title, value, subtitle, icon, gradient, delay = 0 }) => (
-  <div
-    className="relative overflow-hidden rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 p-5 group cursor-default"
-    style={{ animationDelay: `${delay}ms` }}
-  >
-    {/* full-card gradient background */}
-    <div
-      className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-90`}
-    ></div>
-    {/* decorative circle */}
-    <div className="absolute -right-6 -bottom-6 w-28 h-28 rounded-full bg-white/10 group-hover:scale-125 transition-transform duration-500"></div>
-
-    <div className="relative z-10 flex items-start justify-between text-white">
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold uppercase tracking-widest opacity-80">
-          {title}
-        </p>
-        <p className="text-2xl md:text-3xl font-extrabold mt-1 truncate">
-          {value}
-        </p>
-        {subtitle && (
-          <span className="inline-block mt-2 text-xs font-semibold bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full">
-            {subtitle}
-          </span>
-        )}
-      </div>
-      {icon && (
-        <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-xl shrink-0 group-hover:rotate-6 transition-transform">
-          {icon}
-        </div>
-      )}
-    </div>
   </div>
 );
 
@@ -156,10 +119,12 @@ const normalizeTrendRows = (rows = []) =>
   (Array.isArray(rows) ? rows : []).map((d) => {
     const achievement = toSafeNumber(d?.totalAchievement);
     const target = toSafeNumber(d?.totalTarget);
+    const entriesCount = toSafeNumber(d?.count);
     return {
       ...d,
       totalAchievement: achievement,
       totalTarget: target,
+      entriesCount,
       label: `${d?.monthName || "M"} ${d?.year || ""}`.trim(),
       achievementPct:
         target > 0 ? Math.round((achievement / target) * 100 * 100) / 100 : 0,
@@ -447,16 +412,14 @@ export default function Dashboard() {
       if (month) filterParams.month = String(month);
       if (year) filterParams.year = String(year);
 
-      // Load available periods for current hierarchy scope
-      const periodsRes = await dashboardApi.getPeriods({
+      // Load available periods for current hierarchy scope (non-blocking)
+      const periodsPromise = dashboardApi.getPeriods({
         corporation: filters.corporation || "",
         region: filters.region || "",
         circle: filters.circle || "",
         division: filters.division || "",
         kraYear: filters.kraYear || "",
       });
-      const periodList = periodsRes.data?.data || [];
-      setPeriods(periodList);
 
       const groupBy = getGroupByForSelection();
 
@@ -468,6 +431,11 @@ export default function Dashboard() {
       if (month) corpPieParams.month = String(month);
       if (year) corpPieParams.year = String(year);
 
+      // Always show monthly trend across periods (not a single selected month point).
+      const trendParams = { ...filterParams, periodMode: "all" };
+      delete trendParams.month;
+      delete trendParams.year;
+
       const [
         summaryRes,
         entriesRes,
@@ -478,6 +446,7 @@ export default function Dashboard() {
         corpPieRes,
         trendRes,
         kraWiseRes,
+        periodsRes,
       ] = await Promise.allSettled([
         dashboardApi.getSummary({ ...filterParams, groupBy }),
         kraEntryApi.getAll(filterParams),
@@ -496,8 +465,9 @@ export default function Dashboard() {
         dashboardApi.getWeightageDistribution(filterParams),
         dashboardApi.getRankTable({ ...filterParams, groupBy }),
         dashboardApi.getCorpKraPerformance(corpPieParams),
-        dashboardApi.getMonthlyTrend(filterParams),
+        dashboardApi.getMonthlyTrend(trendParams),
         dashboardApi.getByKra(filterParams),
+        periodsPromise,
       ]);
 
       const summaryData =
@@ -532,6 +502,11 @@ export default function Dashboard() {
         kraWiseRes.status === "fulfilled"
           ? kraWiseRes.value.data?.data || []
           : [];
+      const periodList =
+        periodsRes.status === "fulfilled"
+          ? periodsRes.value.data?.data || []
+          : [];
+      setPeriods(periodList);
 
       const safeTopBars = normalizeBarRows(topBarsData);
       const safeBottomBars = normalizeBarRows(bottomBarsData);
@@ -717,21 +692,6 @@ export default function Dashboard() {
     );
   }
 
-  /* Achievement % as a gauge-like visual */
-  const totalAchievementNum = Number(summary?.totalAchievement) || 0;
-  const totalTargetNum = Number(summary?.totalTarget) || 0;
-  const achPctFromTotals =
-    totalTargetNum > 0
-      ? Math.round((totalAchievementNum / totalTargetNum) * 100 * 100) / 100
-      : 0;
-  const achPctRaw = Number(summary?.achievementPercentage);
-  const achPct =
-    Number.isFinite(achPctRaw) && (achPctRaw > 0 || achPctFromTotals === 0)
-      ? achPctRaw
-      : achPctFromTotals;
-  const hasAchievementData =
-    Number(summary?.totalTarget || 0) > 0 ||
-    Number(summary?.totalEntries || 0) > 0;
   const topBottomMax = Math.max(
     100,
     ...topBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
@@ -966,66 +926,6 @@ export default function Dashboard() {
           </p>
         </SectionCard>
 
-        {/* ═══════ SUMMARY STAT CARDS ═══════ */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard
-            title={t("एकूण नोंदी", "Total Entries")}
-            value={summary?.totalEntries || 0}
-            gradient="from-violet-500 to-purple-600"
-            delay={0}
-            icon={<span className="text-2xl">📋</span>}
-          />
-          <StatCard
-            title={t("एकूण साध्य", "Achievement")}
-            value={summary?.totalAchievement?.toFixed(2) || 0}
-            gradient="from-blue-500 to-cyan-500"
-            delay={50}
-            icon={<span className="text-2xl">📈</span>}
-          />
-          <StatCard
-            title={t("एकूण लक्ष्य", "Target")}
-            value={summary?.totalTarget?.toFixed(2) || 0}
-            gradient="from-amber-500 to-orange-500"
-            delay={100}
-            icon={<span className="text-2xl">🎯</span>}
-          />
-          <StatCard
-            title={t("साध्य %", "Ach. %")}
-            value={
-              hasAchievementData
-                ? `${achPct.toFixed(1)}%`
-                : t("डेटा नाही", "No data")
-            }
-            gradient="from-teal-500 to-emerald-500"
-            delay={150}
-            icon={<span className="text-2xl">📊</span>}
-          />
-          <StatCard
-            title={t("सर्वोत्तम", "Best")}
-            value={summary?.bestPerformer?.name || t("N/A", "N/A")}
-            subtitle={
-              summary?.bestPerformer
-                ? `${(Number(summary.bestPerformer.achievementPercentage) || 0).toFixed(1)}%`
-                : ""
-            }
-            gradient="from-emerald-500 to-green-600"
-            delay={200}
-            icon={<span className="text-2xl">🏆</span>}
-          />
-          <StatCard
-            title={t("कमकुवत", "Needs Attn.")}
-            value={summary?.worstPerformer?.name || t("N/A", "N/A")}
-            subtitle={
-              summary?.worstPerformer
-                ? `${(Number(summary.worstPerformer.achievementPercentage) || 0).toFixed(1)}%`
-                : ""
-            }
-            gradient="from-rose-500 to-red-600"
-            delay={250}
-            icon={<span className="text-2xl">⚠️</span>}
-          />
-        </div>
-
         {/* ═══════ TOP / BOTTOM BAR CHARTS ═══════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Top 5 */}
@@ -1243,12 +1143,12 @@ export default function Dashboard() {
             </span>
             <div>
               <h3 className="text-lg font-extrabold text-slate-800">
-                {t("मासिक कल", "Monthly Trend")}
+                {t("मासिक नोंदी कल", "Monthly Entries Trend")}
               </h3>
               <p className="text-xs text-slate-400 font-medium">
                 {t(
-                  "साध्य vs लक्ष्य कालावधीमध्ये",
-                  "Achievement vs Target over time",
+                  "महिन्यानुसार एकूण नोंदींचा कल",
+                  "Month-wise total entries trend",
                 )}
               </p>
             </div>
@@ -1295,24 +1195,24 @@ export default function Dashboard() {
                     fontSize: 13,
                   }}
                   formatter={(v, name) => [
-                    Number(v || 0).toFixed(2),
-                    name === "totalAchievement"
-                      ? t("साध्य", "Achievement")
-                      : t("लक्ष्य", "Target"),
+                    Number(v || 0).toLocaleString("en-IN"),
+                    name === "entriesCount"
+                      ? t("नोंदी", "Entries")
+                      : t("डेटा", "Data"),
                   ]}
                 />
                 <Legend
                   iconType="circle"
                   wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
                   formatter={(value) =>
-                    value === "totalAchievement"
-                      ? t("साध्य", "Achievement")
-                      : t("लक्ष्य", "Target")
+                    value === "entriesCount"
+                      ? t("नोंदी", "Entries")
+                      : t("डेटा", "Data")
                   }
                 />
                 <Area
                   type="monotone"
-                  dataKey="totalAchievement"
+                  dataKey="entriesCount"
                   stroke="#6366f1"
                   strokeWidth={3}
                   fill="url(#gradAch)"
@@ -1325,25 +1225,6 @@ export default function Dashboard() {
                   activeDot={{
                     r: 7,
                     stroke: "#6366f1",
-                    strokeWidth: 2,
-                    fill: "#fff",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="totalTarget"
-                  stroke="#f59e0b"
-                  strokeWidth={3}
-                  fill="url(#gradTgt)"
-                  dot={{
-                    r: 5,
-                    fill: "#f59e0b",
-                    strokeWidth: 2,
-                    stroke: "#fff",
-                  }}
-                  activeDot={{
-                    r: 7,
-                    stroke: "#f59e0b",
                     strokeWidth: 2,
                     fill: "#fff",
                   }}
@@ -1551,45 +1432,80 @@ export default function Dashboard() {
                 title={t("डेटा उपलब्ध नाही", "No weightage data available")}
               />
             ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <PieChart>
-                  <Pie
-                    data={weightageDistribution}
-                    dataKey="weight"
-                    nameKey="kraName"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={120}
-                    paddingAngle={3}
-                    label={(d) => `${d.weight}%`}
-                    stroke="none"
-                  >
-                    {weightageDistribution.map((_, index) => (
-                      <Cell
-                        key={`wc-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
+              <div className="space-y-4">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={weightageDistribution}
+                      dataKey="weight"
+                      nameKey="kraName"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={112}
+                      paddingAngle={3}
+                      labelLine={false}
+                      label={(d) => `${Number(d?.weight || 0).toFixed(0)}%`}
+                      stroke="none"
+                    >
+                      {weightageDistribution.map((_, index) => (
+                        <Cell
+                          key={`wc-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: "12px",
+                        border: "none",
+                        boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                        fontSize: 12,
+                      }}
+                      formatter={(v, _n, props) => {
+                        const name = localizeString(
+                          props?.payload?.kraName || "",
+                          language,
+                        );
+                        return [
+                          `${Number(v || 0).toFixed(2)}%`,
+                          name || t("KRA", "KRA"),
+                        ];
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    {t("KRA तपशील", "KRA Details")}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
+                    {weightageDistribution.map((item, index) => (
+                      <div
+                        key={`weight-legend-${item?.kraId || index}`}
+                        className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
+                        title={localizeString(item?.kraName || "", language)}
+                      >
+                        <span
+                          className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                          style={{
+                            backgroundColor: COLORS[index % COLORS.length],
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
+                            {localizeString(item?.kraName || "-", language)}
+                          </p>
+                          <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                            {Number(item?.weight || 0).toFixed(2)}%
+                          </p>
+                        </div>
+                      </div>
                     ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "12px",
-                      border: "none",
-                      boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                    }}
-                    formatter={(v) => [
-                      Number(v || 0).toFixed(2),
-                      t("वजन", "Weight"),
-                    ]}
-                    labelFormatter={(label) => localizeString(label, language)}
-                  />
-                  <Legend
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
             )}
           </SectionCard>
 

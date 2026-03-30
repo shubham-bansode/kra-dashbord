@@ -1,14 +1,13 @@
-import { Link } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, Navigate } from "react-router-dom";
 import HomePage from "./components/HomePage";
 import KRAForm from "./components/KRAForm";
 import AuthPage from "./pages/AuthPage";
 import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
 import Monitoring from "./pages/Monitoring";
+import Profile from "./pages/Profile";
 import GlobalHeader from "./components/GlobalHeader";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import { useLanguage } from "./i18n/LanguageContext";
 import { RadialBackground } from "./components/light-theme-tailwind-css-background-snippet";
 
 // ============================================================================
@@ -44,7 +43,7 @@ function App() {
             }
           />
           <Route
-            path="/monitoring"
+            path="/report"
             element={
               <ProtectedRoute>
                 <Monitoring />
@@ -52,10 +51,22 @@ function App() {
             }
           />
           <Route
+            path="/monitoring"
+            element={<Navigate to="/report" replace />}
+          />
+          <Route
             path="/admin"
             element={
               <ProtectedRoute requireAdmin>
                 <AdminPanel />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />
@@ -68,30 +79,5 @@ function App() {
     </div>
   );
 }
-
-// ============================================================================
-// COMING SOON COMPONENT
-// ============================================================================
-const ComingSoon = ({ title }) => {
-  const { t } = useLanguage();
-
-  return (
-    <div className="min-h-[calc(100vh-250px)] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-12 text-center max-w-md">
-        <div className="text-6xl mb-6">🚧</div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-4">{title}</h1>
-        <p className="text-xl text-gray-600 mb-8">
-          {t("लवकरच येत आहे", "Coming Soon")}
-        </p>
-        <Link
-          to="/"
-          className="inline-block px-8 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl"
-        >
-          {t("मुख्य पृष्ठावर परत या", "Go Back Home")}
-        </Link>
-      </div>
-    </div>
-  );
-};
 
 export default App;

@@ -24,10 +24,6 @@ async function validateHierarchyStrict({ corporationDoc, regionId, circleId, div
   if (!circleId) {
     return { ok: false, status: 400, message: 'Circle is required for this corporation', field: 'circle' };
   }
-  if (!divisionId) {
-    return { ok: false, status: 400, message: 'Division is required for this corporation', field: 'division' };
-  }
-
   const regionDoc = await Region.findOne({
     _id: regionId,
     corporation: corporationDoc._id,
@@ -59,17 +55,19 @@ async function validateHierarchyStrict({ corporationDoc, regionId, circleId, div
     return { ok: false, status: 400, message: 'Circle must match Google Form exactly', field: 'circle' };
   }
 
-  const divisionDoc = await Division.findOne({ _id: divisionId, isActive: true }).select('_id circle').lean();
-  if (!divisionDoc) {
-    return { ok: false, status: 400, message: 'Invalid division selected', field: 'division' };
-  }
-  if (String(divisionDoc.circle) !== String(circleDoc._id)) {
-    return {
-      ok: false,
-      status: 400,
-      message: 'Division does not belong to selected circle',
-      field: 'division'
-    };
+  if (divisionId) {
+    const divisionDoc = await Division.findOne({ _id: divisionId, isActive: true }).select('_id circle').lean();
+    if (!divisionDoc) {
+      return { ok: false, status: 400, message: 'Invalid division selected', field: 'division' };
+    }
+    if (String(divisionDoc.circle) !== String(circleDoc._id)) {
+      return {
+        ok: false,
+        status: 400,
+        message: 'Division does not belong to selected circle',
+        field: 'division'
+      };
+    }
   }
 
   return { ok: true };
@@ -111,17 +109,17 @@ const validateSubmission = [
 
   body('region')
     .optional({ nullable: true })
-    .custom((v) => v === null || mongoose.isValidObjectId(v))
+    .custom((v) => v === null || v === '' || mongoose.isValidObjectId(v))
     .withMessage('Invalid Region ID'),
 
   body('circle')
     .optional({ nullable: true })
-    .custom((v) => v === null || mongoose.isValidObjectId(v))
+    .custom((v) => v === null || v === '' || mongoose.isValidObjectId(v))
     .withMessage('Invalid Circle ID'),
 
   body('division')
     .optional({ nullable: true })
-    .custom((v) => v === null || mongoose.isValidObjectId(v))
+    .custom((v) => v === null || v === '' || mongoose.isValidObjectId(v))
     .withMessage('Invalid Division ID'),
 
   body('kraYear')
