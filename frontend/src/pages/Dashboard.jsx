@@ -47,6 +47,16 @@ const COLORS = [
 
 const BAR_TOP_COLORS = ["#6366f1", "#818cf8", "#a5b4fc", "#c7d2fe", "#e0e7ff"];
 const BAR_BTM_COLORS = ["#ef4444", "#f87171", "#fca5a5", "#fecaca", "#fee2e2"];
+const KRA_FIXED_ORDER = [1, 2, 3, 4, 5, 6, 7];
+const KRA_COLOR_BY_ID = {
+  1: "#6366f1",
+  2: "#f59e0b",
+  3: "#10b981",
+  4: "#ef4444",
+  5: "#8b5cf6",
+  6: "#06b6d4",
+  7: "#7c3aed",
+};
 
 /* ── Loading spinner ── */
 const LoadingSpinner = () => (
@@ -103,6 +113,44 @@ const clampPercent = (value) => {
 const toCleanLabel = (value, fallback = "") => {
   const label = String(value || "").trim();
   return label || fallback;
+};
+
+const getKraIdFromItem = (item) => {
+  const direct = Number(item?.kraId);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const byName = String(item?.kraName || "").match(/\bKRA\s*(\d+)\b/i);
+  if (byName?.[1]) {
+    const parsed = Number(byName[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return null;
+};
+
+const hashString = (text) =>
+  String(text || "")
+    .split("")
+    .reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 0);
+
+const getKraColor = (item) => {
+  const kraId = getKraIdFromItem(item);
+  if (kraId && KRA_COLOR_BY_ID[kraId]) return KRA_COLOR_BY_ID[kraId];
+
+  const basis = String(item?.kraName || item?.name || "KRA");
+  return COLORS[hashString(basis) % COLORS.length];
+};
+
+const sortByFixedKraOrder = (rows = []) => {
+  const order = new Map(KRA_FIXED_ORDER.map((id, idx) => [id, idx]));
+  return [...rows].sort((a, b) => {
+    const aId = getKraIdFromItem(a);
+    const bId = getKraIdFromItem(b);
+    const aRank = aId && order.has(aId) ? order.get(aId) : 999;
+    const bRank = bId && order.has(bId) ? order.get(bId) : 999;
+    if (aRank !== bRank) return aRank - bRank;
+    return String(a?.kraName || "").localeCompare(String(b?.kraName || ""));
+  });
 };
 
 const normalizeBarRows = (rows = []) =>
@@ -304,6 +352,29 @@ export default function Dashboard() {
     if (groupBy === "circle") return t("मंडळ", "Circle");
     return t("उपविभाग", "Division");
   };
+
+  const getFyStartYear = (fy) => {
+    const match = String(fy || "").match(/^(\d{4})/);
+    if (!match) return null;
+    const start = Number(match[1]);
+    return Number.isFinite(start) ? start : null;
+  };
+
+  const formatFyLabel = (startYear) =>
+    `${startYear}-${String(startYear + 1).slice(-2)}`;
+
+  const getCurrentFyStartYear = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    // App uses Jun-May financial year.
+    return month >= 6 ? year : year - 1;
+  };
+
+  const selectedFyStart = getFyStartYear(filters.kraYear);
+  const effectiveFyStart = selectedFyStart || getCurrentFyStartYear();
+  const currentFyLabel = formatFyLabel(effectiveFyStart);
+  const previousFyLabel = formatFyLabel(effectiveFyStart - 1);
 
   const handleEntityDrillDown = async (row) => {
     const groupBy = getGroupByForSelection();
@@ -581,19 +652,43 @@ export default function Dashboard() {
       setBottomBars(
         safeBottomBars.length ? safeBottomBars : fallbackBottomFromRanks,
       );
-      setWeightageDistribution(Array.isArray(weightData) ? weightData : []);
+      setWeightageDistribution(
+        sortByFixedKraOrder(Array.isArray(weightData) ? weightData : []),
+      );
       setRankTable(safeRankRows);
+
+      const masterKraNameById = new Map(
+        (Array.isArray(kras) ? kras : []).map((k) => [
+          Number(k?.kraNumber),
+          k?.name || `KRA ${k?.kraNumber}`,
+        ]),
+      );
+
       setCorpKraPies(
         (Array.isArray(corpPieData) ? corpPieData : []).map((corp) => ({
           ...corp,
           corporationName: toCleanLabel(corp?.corporationName),
-          data: (Array.isArray(corp?.data) ? corp.data : []).map((item) => ({
-            ...item,
-            kraName: toCleanLabel(item?.kraName, "KRA"),
-            slicePercentage: clampPercent(item?.slicePercentage),
-            achievementPercentage: clampPercent(item?.achievementPercentage),
-            weight: toSafeNumber(item?.weight),
-          })),
+          data: sortByFixedKraOrder(
+            KRA_FIXED_ORDER.map((kraId) => {
+              const rawItems = Array.isArray(corp?.data) ? corp.data : [];
+              const existing = rawItems.find(
+                (x) => Number(x?.kraId) === Number(kraId),
+              );
+              return {
+                ...(existing || {}),
+                kraId,
+                kraName: toCleanLabel(
+                  existing?.kraName,
+                  masterKraNameById.get(kraId) || `KRA ${kraId}`,
+                ),
+                slicePercentage: clampPercent(existing?.slicePercentage),
+                achievementPercentage: clampPercent(
+                  existing?.achievementPercentage,
+                ),
+                weight: toSafeNumber(existing?.weight),
+              };
+            }),
+          ),
         })),
       );
 
@@ -1172,7 +1267,7 @@ export default function Dashboard() {
             </span>
             <div>
               <h3 className="text-lg font-extrabold text-slate-800">
-                {t("मासिक नोंदी कल", "Monthly Entries Trend")}
+                {t("महिनानिहाय KRA कल", "Month Wise KRA Trends")}
               </h3>
               <p className="text-xs text-slate-400 font-medium">
                 {t(
@@ -1457,6 +1552,8 @@ export default function Dashboard() {
                       nameKey="kraName"
                       cx="50%"
                       cy="50%"
+                      startAngle={90}
+                      endAngle={-270}
                       innerRadius={55}
                       outerRadius={112}
                       paddingAngle={3}
@@ -1467,7 +1564,7 @@ export default function Dashboard() {
                       {weightageDistribution.map((_, index) => (
                         <Cell
                           key={`wc-${index}`}
-                          fill={COLORS[index % COLORS.length]}
+                          fill={getKraColor(weightageDistribution[index])}
                         />
                       ))}
                     </Pie>
@@ -1506,7 +1603,7 @@ export default function Dashboard() {
                         <span
                           className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
                           style={{
-                            backgroundColor: COLORS[index % COLORS.length],
+                            backgroundColor: getKraColor(item),
                           }}
                         />
                         <div className="min-w-0 flex-1">
@@ -1533,10 +1630,13 @@ export default function Dashboard() {
               </span>
               <div>
                 <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("रँकिंग लीडरबोर्ड", "Leaderboard")}
+                  {t(
+                    "चालू वर्ष KRA व मागील वर्ष KRA तुलना",
+                    "Comparison of current year KRA vs previous year KRA",
+                  )}
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
-                  {t("मागील महिन्याशी तुलना", "vs Previous Period")}
+                  {t("वर्षनिहाय तुलना", "Year-wise comparison")}
                 </p>
               </div>
             </div>
@@ -1549,10 +1649,20 @@ export default function Dashboard() {
                       {getEntityLabel()}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t("मागील %", "Prev %")}
+                      {t(
+                        "मागील वर्ष टक्केवारी",
+                        previousFyLabel
+                          ? `Previous Year Percentage (${previousFyLabel})`
+                          : "Previous Year Percentage",
+                      )}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t("चालू %", "Curr %")}
+                      {t(
+                        "चालू वर्ष टक्केवारी",
+                        currentFyLabel
+                          ? `Current Year Percentage (${currentFyLabel})`
+                          : "Current Year Percentage",
+                      )}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {t("रँक", "Rank")}
@@ -1714,25 +1824,21 @@ export default function Dashboard() {
                           nameKey="kraName"
                           cx="50%"
                           cy="45%"
+                          startAngle={90}
+                          endAngle={-270}
                           innerRadius={40}
                           outerRadius={90}
                           paddingAngle={2}
                           stroke="none"
-                          label={({ kraName, slicePercentage }) => {
-                            const name = localizeString(
-                              kraName || "",
-                              language,
-                            );
-                            const short =
-                              name.length > 18 ? name.slice(0, 16) + "…" : name;
-                            return `${short} (${Number(slicePercentage || 0).toFixed(1)}%)`;
-                          }}
+                          label={({ slicePercentage }) =>
+                            `${Number(slicePercentage || 0).toFixed(1)}%`
+                          }
                           labelLine={{ stroke: "#94a3b8", strokeWidth: 1 }}
                         >
-                          {(corp.data || []).map((_, index) => (
+                          {(corp.data || []).map((slice, index) => (
                             <Cell
                               key={`cell-${corp.corporationId}-${index}`}
-                              fill={COLORS[index % COLORS.length]}
+                              fill={getKraColor(slice)}
                             />
                           ))}
                         </Pie>
