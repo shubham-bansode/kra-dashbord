@@ -55,7 +55,7 @@ const KRA_COLOR_BY_ID = {
   4: "#ef4444",
   5: "#8b5cf6",
   6: "#06b6d4",
-  7: "#7c3aed",
+  7: "#be185d",
 };
 
 /* ── Loading spinner ── */
