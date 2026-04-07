@@ -410,7 +410,7 @@ export default function AdminPanel() {
     refreshMe({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
+ 
   // Load master KRAs for filters & displays
   useEffect(() => {
     const loadKras = async () => {

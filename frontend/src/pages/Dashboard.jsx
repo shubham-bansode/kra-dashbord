@@ -18,6 +18,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
+  LabelList,
 } from "recharts";
 import {
   dashboardApi,
@@ -769,7 +770,7 @@ export default function Dashboard() {
         )}
 
         {/* ═══════ FILTERS ═══════ */}
-        <SectionCard>
+        <SectionCard className="sticky top-20 z-30">
           <div className="flex items-center gap-3 mb-5">
             <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white flex items-center justify-center text-base shadow">
               🔍
@@ -952,7 +953,7 @@ export default function Dashboard() {
               </span>
               <div>
                 <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("उत्कृष्ट कामगिरी टॉप 5", "Top 5 Performers")}
+                  {t("एकूण टॉप परफॉर्मर्स", "Over All Top Performers")}
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
                   {getEntityLabel()} {t("नुसार साध्य %", "wise Achievement %")}
@@ -969,7 +970,7 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart
                   data={topBars}
-                  margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
+                  margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
                 >
                   <defs>
                     {BAR_TOP_COLORS.map((c, i) => (
@@ -1024,6 +1025,12 @@ export default function Dashboard() {
                     name={t("साध्य %", "Achievement %")}
                     onClick={(e) => handleEntityDrillDown(e?.payload)}
                   >
+                    <LabelList
+                      dataKey="achievementPercentage"
+                      position="top"
+                      formatter={(value) => `${Number(value || 0).toFixed(1)}%`}
+                      style={{ fill: "#334155", fontSize: 11, fontWeight: 700 }}
+                    />
                     {topBars.map((_, i) => (
                       <Cell
                         key={`top-${i}`}
@@ -1055,7 +1062,7 @@ export default function Dashboard() {
               </span>
               <div>
                 <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("सुधारणा आवश्यक बॉटम 5", "Bottom 5 – Needs Attention")}
+                  {t("एकूण बॉटम परफॉर्मर्स", "Over All Bottom Performers")}
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
                   {getEntityLabel()} {t("नुसार साध्य %", "wise Achievement %")}
@@ -1072,7 +1079,7 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart
                   data={bottomBars}
-                  margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
+                  margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
                 >
                   <defs>
                     {BAR_BTM_COLORS.map((c, i) => (
@@ -1127,6 +1134,12 @@ export default function Dashboard() {
                     name={t("साध्य %", "Achievement %")}
                     onClick={(e) => handleEntityDrillDown(e?.payload)}
                   >
+                    <LabelList
+                      dataKey="achievementPercentage"
+                      position="top"
+                      formatter={(value) => `${Number(value || 0).toFixed(1)}%`}
+                      style={{ fill: "#334155", fontSize: 11, fontWeight: 700 }}
+                    />
                     {bottomBars.map((_, i) => (
                       <Cell
                         key={`btm-${i}`}

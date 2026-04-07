@@ -879,10 +879,9 @@ const KRAForm = () => {
       const result = response.data;
 
       if (result.success) {
-        const insertedCount = Number(result?.summary?.inserted ?? 0);
         const successMsg = t(
-          `${insertedCount} KRA नोंदी यशस्वीरित्या सबमिट केल्या!`,
-          `${insertedCount} KRA entries submitted successfully!`,
+          "KRA नोंदी यशस्वीरित्या सबमिट केल्या!",
+          "KRA entries submitted successfully!",
         );
         setSuccessSummary(successMsg);
         setShowSuccessModal(true);
@@ -932,7 +931,7 @@ const KRAForm = () => {
         setSubmitStatus({
           type: "error",
           message: tp(
-            "⚠️ या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. एकदा सबमिट केल्यानंतर फक्त Admin बदल करू शकतात. | A KRA entry already exists for the selected month. Once submitted, only admin can update entries.",
+            "⚠️ या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. | A KRA entry already exists for the selected month.",
           ),
         });
         return;
@@ -945,8 +944,8 @@ const KRAForm = () => {
           message:
             errorData?.message ||
             t(
-              "या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे. फक्त Admin अपडेट करू शकतात.",
-              "A KRA entry already exists for this month. Only admin can update entries.",
+              "या महिन्यासाठी KRA entry आधीच अस्तित्वात आहे.",
+              "A KRA entry already exists for this month.",
             ),
         });
         return;
@@ -1019,6 +1018,9 @@ const KRAForm = () => {
     const selectedKras = displayKras.filter((kra) =>
       selectedKraIds.includes(kra.id),
     );
+    const selectedMonth = months.find(
+      (m) => String(m.value) === String(formData.kraMonth),
+    );
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1041,8 +1043,8 @@ const KRAForm = () => {
               <p className="text-yellow-800 font-medium">
                 ⚠️
                 {t(
-                  "सबमिट केल्यानंतर बदल करता येणार नाही. फक्त Admin बदल करू शकतात.",
-                  "Once submitted, you cannot edit. Only Admin can make changes.",
+                  "सबमिट केल्यानंतर बदल करता येणार नाही.",
+                  "Please note that once submitted, changes cannot be made.",
                 )}
               </p>
             </div>
@@ -1132,11 +1134,13 @@ const KRAForm = () => {
                 {localizeName(selectedDivision, language) || "-"}
               </p>
               <p className="text-sm text-gray-600">
-                <strong>{t("वर्ष", "Year")}:</strong> {formData.kraYear || "-"}
+                <strong>{t("महिना", "Month")}:</strong>{" "}
+                {(language === "mr"
+                  ? selectedMonth?.label
+                  : selectedMonth?.labelEn) || "-"}
               </p>
               <p className="text-sm text-gray-600">
-                <strong>{t("तारीख", "Date")}:</strong>{" "}
-                {formData.achievementDate || "-"}
+                <strong>{t("वर्ष", "Year")}:</strong> {formData.kraYear || "-"}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>{t("निवडलेले KRA", "Selected KRAs")}:</strong>{" "}
@@ -1391,7 +1395,7 @@ const KRAForm = () => {
                   {/* Division */}
                   <div>
                     <label htmlFor="division" className="form-label">
-                      {t("विभाग", "Division")}
+                      {t("विभाग (ऐच्छिक)", "Division (Optional)")}
                     </label>
                     <select
                       id="division"

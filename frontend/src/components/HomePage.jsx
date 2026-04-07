@@ -33,7 +33,7 @@ const HomePage = () => {
       title: "प्रकल्प अहवाल",
       titleEn: "Project Report",
       description: "केआरए अहवाल डॅशबोर्ड",
-      descriptionEn: "KRA Report Dashboard",
+      descriptionEn: "KRA Monitoring System",
       icon: "🌊",
       path: "/report",
       color: "from-cyan-500 to-cyan-700",
@@ -77,12 +77,12 @@ const HomePage = () => {
 
           <div className="text-center max-w-4xl mx-auto mb-12">
             <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-              {t("केआरए अहवाल डॅशबोर्ड", "KRA Report Dashboard")}
+              {t("केआरए अहवाल डॅशबोर्ड", "KRA Monitoring System")}
             </h1>
             <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
               {t(
                 "Key Result Areas (KRA) कार्यप्रदर्शन अहवाल आणि डेटा व्यवस्थापन प्रणाली",
-                "Key Result Areas (KRA) Performance Report & Data Management System",
+                "Key Result Areas (KRA) Monitoring  & Data Management System",
               )}
             </p>
           </div>

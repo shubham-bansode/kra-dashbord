@@ -19,7 +19,7 @@ async function main() {
   const corporations = await Corporation.find().sort({ name: 1 }).limit(5).lean();
   if (corporations.length < 5) {
     throw new Error(`Expected at least 5 corporations, found ${corporations.length}`);
-  }
+  }  
 
   const results = [];
 
