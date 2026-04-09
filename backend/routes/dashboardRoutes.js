@@ -854,7 +854,10 @@ router.get('/achievement-bar', async (req, res) => {
     }
 
     const mode = String(req.query.mode || 'top').toLowerCase(); // top | bottom
-    const limit = Math.min(Math.max(toInt(req.query.limit) || 5, 1), 50);
+    const rawLimit = String(req.query.limit || '').trim().toLowerCase();
+    const limit = rawLimit === 'all'
+      ? null
+      : Math.min(Math.max(toInt(req.query.limit) || 5, 1), 1000);
 
     const rawData = await KraMonthlyEntry.aggregate([
       { $match: match },
@@ -905,7 +908,7 @@ router.get('/achievement-bar', async (req, res) => {
       return String(a?.name || '').localeCompare(String(b?.name || ''));
     });
 
-    const limitedRows = sortedRows.slice(0, limit);
+    const limitedRows = limit === null ? sortedRows : sortedRows.slice(0, limit);
     const data = await backfillCorporationNamesFromDivisionSnapshots(limitedRows, grouping);
 
     res.json({ success: true, period, data });

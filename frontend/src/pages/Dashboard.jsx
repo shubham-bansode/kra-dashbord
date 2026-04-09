@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -32,6 +32,7 @@ import {
 import { generateKraYears } from "../utils/helpers";
 import { useLanguage } from "../i18n/LanguageContext";
 import { localizeName, localizeString } from "../utils/localize";
+import { useAuth } from "../auth/AuthContext";
 
 /* ── Vibrant multi-colour palette ── */
 const COLORS = [
@@ -278,6 +279,8 @@ const ChartLoadingState = () => (
 
 export default function Dashboard() {
   const { t, language } = useLanguage();
+  const { user } = useAuth();
+  const hasAppliedUserDefaults = useRef(false);
   const [summary, setSummary] = useState(null);
   const [entries, setEntries] = useState([]);
 
@@ -326,6 +329,37 @@ export default function Dashboard() {
     };
     loadMasterData();
   }, []);
+
+  const toId = (value) => {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    return String(value?._id || value?.id || "");
+  };
+
+  useEffect(() => {
+    if (hasAppliedUserDefaults.current) return;
+    if (!Array.isArray(corporations) || corporations.length === 0) return;
+
+    const corpId = toId(user?.corporation);
+    const regionId = toId(user?.region);
+    const circleId = toId(user?.circle);
+    const divisionId = toId(user?.division);
+    const role = String(user?.role || "").toLowerCase();
+
+    // For normal users, default to their assigned hierarchy for focused dashboard view.
+    // Admin/superadmin keep global view by default.
+    if (role === "user" && (corpId || regionId || circleId || divisionId)) {
+      setFilters((prev) => ({
+        ...prev,
+        corporation: corpId || prev.corporation,
+        region: regionId || "",
+        circle: circleId || "",
+        division: divisionId || "",
+      }));
+    }
+
+    hasAppliedUserDefaults.current = true;
+  }, [user, corporations]);
 
   // Cascade: Corporation -> Regions
   useEffect(() => {
@@ -587,7 +621,7 @@ export default function Dashboard() {
           ...filterParams,
           groupBy,
           mode: "top",
-          limit: "5",
+          limit: "all",
         }),
         dashboardApi.getAchievementBar({
           ...filterParams,
@@ -654,7 +688,6 @@ export default function Dashboard() {
       const fallbackTopFromRanks = [...safeRankRows]
         .filter((r) => r.name)
         .sort((a, b) => b.currentMonthPercentage - a.currentMonthPercentage)
-        .slice(0, 5)
         .map((r) => ({
           _id: r.entityId,
           name: r.name,
@@ -1115,7 +1148,7 @@ export default function Dashboard() {
 
         {/* ═══════ TOP / BOTTOM BAR CHARTS ═══════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top 5 */}
+          {/* Top performers (all entities in current hierarchy scope) */}
           <SectionCard>
             <div className="flex items-center gap-3 mb-4">
               <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white flex items-center justify-center text-lg shadow-md">
@@ -1217,14 +1250,6 @@ export default function Dashboard() {
             <p className="mt-3 text-[11px] font-semibold text-indigo-500 text-center bg-indigo-50 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
               {t("बारवर क्लिक करा ड्रिल-डाउनसाठी", "Click a bar to drill down")}
             </p>
-            {topBars.length > 0 && topBars.length < 5 && (
-              <p className="mt-2 text-center text-[11px] text-slate-400">
-                {t(
-                  "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
-                  "Fewer than 5 entities available",
-                )}
-              </p>
-            )}
           </SectionCard>
 
           {/* Bottom 5 */}

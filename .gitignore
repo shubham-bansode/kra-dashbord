@@ -33,3 +33,7 @@ Images/
 *.xlsx
 *.xls
 *.xlsm
+!frontend/public/images/
+frontend/public/images/*
+!frontend/public/images/dam-slideshow/
+!frontend/public/images/dam-slideshow/**

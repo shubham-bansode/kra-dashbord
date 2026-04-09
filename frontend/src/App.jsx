@@ -8,7 +8,7 @@ import Monitoring from "./pages/Monitoring";
 import Profile from "./pages/Profile";
 import GlobalHeader from "./components/GlobalHeader";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import { RadialBackground } from "./components/light-theme-tailwind-css-background-snippet";
+import DamPhotoSlideshowBackground from "./components/DamPhotoSlideshowBackground";
 
 // ============================================================================
 // MAIN APP COMPONENT
@@ -16,8 +16,7 @@ import { RadialBackground } from "./components/light-theme-tailwind-css-backgrou
 function App() {
   return (
     <div className="relative min-h-screen">
-      {/* Radial Background */}
-      <RadialBackground />
+      <DamPhotoSlideshowBackground />
 
       <div className="relative z-0">
         {/* Global Header - Sticky on all pages */}

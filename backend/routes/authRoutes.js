@@ -30,6 +30,29 @@ function signToken(user) {
   );
 }
 
+function applyUserHierarchyPopulate(query) {
+  return query
+    .populate('corporation', 'name code location hasRegions')
+    .populate('region', 'name code')
+    .populate('circle', 'name code')
+    .populate('division', 'name code');
+}
+
+function userResponse(user) {
+  return {
+    id: user._id,
+    fullName: user.fullName,
+    username: user.username,
+    mobileNumber: user.mobileNumber,
+    corporation: user.corporation,
+    region: user.region || null,
+    circle: user.circle || null,
+    division: user.division || null,
+    hierarchyLevel: user.hierarchyLevel || null,
+    role: user.role || 'user'
+  };
+}
+
 // POST /api/auth/register
 router.post(
   '/register',
@@ -93,21 +116,14 @@ router.post(
 
       const token = signToken(user);
 
-      const populatedUser = await User.findById(user._id).populate('corporation', 'name code location hasRegions');
+      const populatedUser = await applyUserHierarchyPopulate(User.findById(user._id));
 
       return res.status(201).json({
         success: true,
         message: 'User registered successfully',
         data: {
           token,
-          user: {
-            id: populatedUser._id,
-            fullName: populatedUser.fullName,
-            username: populatedUser.username,
-            mobileNumber: populatedUser.mobileNumber,
-            corporation: populatedUser.corporation,
-            role: populatedUser.role || 'user'
-          }
+          user: userResponse(populatedUser)
         }
       });
     } catch (error) {
@@ -140,7 +156,7 @@ router.post(
 
       const { username, password } = req.body;
       const normalizedUsername = String(username || '').trim().toLowerCase();
-      const user = await User.findOne({ username: normalizedUsername }).populate('corporation', 'name code location hasRegions');
+      const user = await applyUserHierarchyPopulate(User.findOne({ username: normalizedUsername }));
 
       if (!user || !user.isActive) {
         return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -158,14 +174,7 @@ router.post(
         message: 'Login successful',
         data: {
           token,
-          user: {
-            id: user._id,
-            fullName: user.fullName,
-            username: user.username,
-            mobileNumber: user.mobileNumber,
-            corporation: user.corporation,
-            role: user.role || 'user'
-          }
+          user: userResponse(user)
         }
       });
     } catch (error) {
@@ -181,21 +190,14 @@ router.post(
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).populate('corporation', 'name code location hasRegions');
+    const user = await applyUserHierarchyPopulate(User.findById(req.user.userId));
     if (!user || !user.isActive) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     return res.json({
       success: true,
-      data: {
-        id: user._id,
-        fullName: user.fullName,
-        username: user.username,
-        mobileNumber: user.mobileNumber,
-        corporation: user.corporation,
-        role: user.role || 'user'
-      }
+      data: userResponse(user)
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Error fetching profile', error: error.message });
@@ -274,19 +276,12 @@ async function handleProfileUpdate(req, res) {
 
     await user.save();
 
-    const populatedUser = await User.findById(user._id).populate('corporation', 'name code location hasRegions');
+    const populatedUser = await applyUserHierarchyPopulate(User.findById(user._id));
 
     return res.json({
       success: true,
       message: 'Profile updated successfully',
-      data: {
-        id: populatedUser._id,
-        fullName: populatedUser.fullName,
-        username: populatedUser.username,
-        mobileNumber: populatedUser.mobileNumber,
-        corporation: populatedUser.corporation,
-        role: populatedUser.role || 'user'
-      }
+      data: userResponse(populatedUser)
     });
   } catch (error) {
     return res.status(500).json({
