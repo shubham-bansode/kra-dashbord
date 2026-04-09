@@ -50,7 +50,8 @@ export default function Profile() {
       );
     }
 
-    if (!/^[6-9]\d{9}$/.test(String(formData.mobileNumber || "").trim())) {
+    const normalizedMobile = String(formData.mobileNumber || "").trim();
+    if (normalizedMobile && !/^[6-9]\d{9}$/.test(normalizedMobile)) {
       nextErrors.mobileNumber = t(
         "कृपया वैध 10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा",
         "Please enter a valid 10-digit Indian mobile number",

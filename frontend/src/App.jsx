@@ -70,9 +70,9 @@ function App() {
               </ProtectedRoute>
             }
           />
-          {/* Combined Auth Page for Login/Signup/Admin Login */}
+          {/* Auth Routes */}
           <Route path="/login" element={<AuthPage />} />
-          <Route path="/signup" element={<AuthPage />} />
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route path="/auth" element={<AuthPage />} />
         </Routes>
       </div>

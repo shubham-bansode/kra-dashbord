@@ -50,8 +50,8 @@ export function AuthProvider({ children }) {
     saveAuth("", null);
   };
 
-  const login = async ({ mobileNumber, password }) => {
-    const res = await authApi.login({ mobileNumber, password });
+  const login = async ({ username, password }) => {
+    const res = await authApi.login({ username, password });
     const nextToken = res.data?.data?.token;
     const nextUser = res.data?.data?.user;
     saveAuth(nextToken, nextUser);
@@ -61,12 +61,14 @@ export function AuthProvider({ children }) {
   const register = async ({
     corporation,
     fullName,
+    username,
     mobileNumber,
     password,
   }) => {
     const res = await authApi.register({
       corporation,
       fullName,
+      username,
       mobileNumber,
       password,
     });

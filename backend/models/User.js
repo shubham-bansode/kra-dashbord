@@ -12,13 +12,25 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Full name is required'],
       trim: true
     },
+    username: {
+      type: String,
+      required: [true, 'Username is required'],
+      unique: true,
+      trim: true,
+      lowercase: true,
+      minlength: [3, 'Username must be at least 3 characters']
+    },
     mobileNumber: {
       type: String,
-      required: [true, 'Mobile number is required'],
+      required: false,
       unique: true,
+      sparse: true,
       trim: true,
       validate: {
         validator: function (v) {
+          if (typeof v === 'undefined' || v === null || String(v).trim() === '') {
+            return true;
+          }
           return /^[6-9]\d{9}$/.test(v);
         },
         message: 'Please enter a valid 10-digit Indian mobile number'

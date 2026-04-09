@@ -22,7 +22,7 @@ function signToken(user) {
   return jwt.sign(
     {
       userId: user._id,
-      mobileNumber: user.mobileNumber,
+      username: user.username,
       role: user.role || 'user'
     },
     getJwtSecret(),
@@ -36,7 +36,17 @@ router.post(
   [
     body('corporation').notEmpty().withMessage('Corporation is required').isMongoId().withMessage('Invalid Corporation ID'),
     body('fullName').notEmpty().withMessage('Full name is required').isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
-    body('mobileNumber').notEmpty().withMessage('Mobile number is required').matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
+    body('username')
+      .notEmpty()
+      .withMessage('Username is required')
+      .isLength({ min: 3 })
+      .withMessage('Username must be at least 3 characters')
+      .matches(/^[a-zA-Z0-9._-]+$/)
+      .withMessage('Username may contain letters, numbers, dot, underscore and hyphen only'),
+    body('mobileNumber')
+      .optional({ values: 'falsy' })
+      .matches(/^[6-9]\d{9}$/)
+      .withMessage('Please enter a valid 10-digit Indian mobile number'),
     body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
   ],
   async (req, res) => {
@@ -50,16 +60,25 @@ router.post(
         });
       }
 
-      const { corporation, fullName, mobileNumber, password } = req.body;
+      const { corporation, fullName, username, mobileNumber, password } = req.body;
+      const normalizedUsername = String(username || '').trim().toLowerCase();
+      const normalizedMobile = String(mobileNumber || '').trim();
 
       const corp = await Corporation.findById(corporation);
       if (!corp) {
         return res.status(400).json({ success: false, message: 'Invalid corporation selected' });
       }
 
-      const existing = await User.findOne({ mobileNumber });
-      if (existing) {
-        return res.status(409).json({ success: false, message: 'Mobile number already registered' });
+      const existingByUsername = await User.findOne({ username: normalizedUsername });
+      if (existingByUsername) {
+        return res.status(409).json({ success: false, message: 'Username already registered' });
+      }
+
+      if (normalizedMobile) {
+        const existingByMobile = await User.findOne({ mobileNumber: normalizedMobile });
+        if (existingByMobile) {
+          return res.status(409).json({ success: false, message: 'Mobile number already registered' });
+        }
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
@@ -67,7 +86,8 @@ router.post(
       const user = await User.create({
         corporation,
         fullName,
-        mobileNumber,
+        username: normalizedUsername,
+        mobileNumber: normalizedMobile || undefined,
         passwordHash
       });
 
@@ -83,6 +103,7 @@ router.post(
           user: {
             id: populatedUser._id,
             fullName: populatedUser.fullName,
+            username: populatedUser.username,
             mobileNumber: populatedUser.mobileNumber,
             corporation: populatedUser.corporation,
             role: populatedUser.role || 'user'
@@ -103,7 +124,7 @@ router.post(
 router.post(
   '/login',
   [
-    body('mobileNumber').notEmpty().withMessage('Mobile number is required').matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
+    body('username').notEmpty().withMessage('Username is required'),
     body('password').notEmpty().withMessage('Password is required')
   ],
   async (req, res) => {
@@ -117,8 +138,9 @@ router.post(
         });
       }
 
-      const { mobileNumber, password } = req.body;
-      const user = await User.findOne({ mobileNumber }).populate('corporation', 'name code location hasRegions');
+      const { username, password } = req.body;
+      const normalizedUsername = String(username || '').trim().toLowerCase();
+      const user = await User.findOne({ username: normalizedUsername }).populate('corporation', 'name code location hasRegions');
 
       if (!user || !user.isActive) {
         return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -139,6 +161,7 @@ router.post(
           user: {
             id: user._id,
             fullName: user.fullName,
+            username: user.username,
             mobileNumber: user.mobileNumber,
             corporation: user.corporation,
             role: user.role || 'user'
@@ -168,6 +191,7 @@ router.get('/me', auth, async (req, res) => {
       data: {
         id: user._id,
         fullName: user.fullName,
+        username: user.username,
         mobileNumber: user.mobileNumber,
         corporation: user.corporation,
         role: user.role || 'user'
@@ -183,8 +207,14 @@ const validateProfileUpdate = [
     .optional()
     .isLength({ min: 2 })
     .withMessage('Full name must be at least 2 characters'),
-  body('mobileNumber')
+  body('username')
     .optional()
+    .isLength({ min: 3 })
+    .withMessage('Username must be at least 3 characters')
+    .matches(/^[a-zA-Z0-9._-]+$/)
+    .withMessage('Username may contain letters, numbers, dot, underscore and hyphen only'),
+  body('mobileNumber')
+    .optional({ values: 'falsy' })
     .matches(/^[6-9]\d{9}$/)
     .withMessage('Please enter a valid 10-digit Indian mobile number')
 ];
@@ -200,9 +230,11 @@ async function handleProfileUpdate(req, res) {
       });
     }
 
-    const { fullName, mobileNumber } = req.body;
+    const { fullName, username, mobileNumber } = req.body;
+    const normalizedUsername = String(username || '').trim().toLowerCase();
+    const normalizedMobile = String(mobileNumber || '').trim();
 
-    if (typeof fullName === 'undefined' && typeof mobileNumber === 'undefined') {
+    if (typeof fullName === 'undefined' && typeof username === 'undefined' && typeof mobileNumber === 'undefined') {
       return res.status(400).json({
         success: false,
         message: 'No profile fields provided for update'
@@ -214,18 +246,30 @@ async function handleProfileUpdate(req, res) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    if (typeof mobileNumber !== 'undefined' && mobileNumber !== user.mobileNumber) {
-      const existing = await User.findOne({ mobileNumber, _id: { $ne: user._id } });
-      if (existing) {
-        return res.status(409).json({ success: false, message: 'Mobile number already registered' });
+    if (typeof username !== 'undefined' && normalizedUsername !== user.username) {
+      const existingByUsername = await User.findOne({ username: normalizedUsername, _id: { $ne: user._id } });
+      if (existingByUsername) {
+        return res.status(409).json({ success: false, message: 'Username already registered' });
+      }
+    }
+
+    if (typeof mobileNumber !== 'undefined') {
+      if (normalizedMobile && normalizedMobile !== user.mobileNumber) {
+        const existingByMobile = await User.findOne({ mobileNumber: normalizedMobile, _id: { $ne: user._id } });
+        if (existingByMobile) {
+          return res.status(409).json({ success: false, message: 'Mobile number already registered' });
+        }
       }
     }
 
     if (typeof fullName !== 'undefined') {
       user.fullName = String(fullName).trim();
     }
+    if (typeof username !== 'undefined') {
+      user.username = normalizedUsername;
+    }
     if (typeof mobileNumber !== 'undefined') {
-      user.mobileNumber = String(mobileNumber).trim();
+      user.mobileNumber = normalizedMobile || undefined;
     }
 
     await user.save();
@@ -238,6 +282,7 @@ async function handleProfileUpdate(req, res) {
       data: {
         id: populatedUser._id,
         fullName: populatedUser.fullName,
+        username: populatedUser.username,
         mobileNumber: populatedUser.mobileNumber,
         corporation: populatedUser.corporation,
         role: populatedUser.role || 'user'

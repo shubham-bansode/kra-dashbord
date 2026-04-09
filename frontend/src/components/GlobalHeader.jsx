@@ -140,7 +140,7 @@ const GlobalHeader = () => {
                           {user.fullName}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {user.mobileNumber}
+                          @{user.username || "user"}
                         </p>
                         <span
                           className={`inline-block mt-1.5 px-2 py-0.5 text-[10px] font-semibold rounded-full ${

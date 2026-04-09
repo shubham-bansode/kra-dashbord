@@ -25,43 +25,43 @@ async function seedAdmin() {
     // Check if superadmin already exists
     const existingAdmin = await User.findOne({ role: 'superadmin' });
     if (existingAdmin) {
-      console.log('ℹ️ Superadmin already exists:', existingAdmin.mobileNumber);
+      console.log('ℹ️ Superadmin already exists:', existingAdmin.username);
     } else {
       // Create superadmin user
       const passwordHash = await bcrypt.hash('admin123', 10);
       const adminUser = await User.create({
         corporation: corporation._id,
         fullName: 'Super Admin',
-        mobileNumber: '9999999999',
+        username: 'superadmin',
         passwordHash,
         role: 'superadmin',
         isActive: true
       });
       console.log('✅ Superadmin created:');
-      console.log('   Mobile: 9999999999');
+      console.log('   Username: superadmin');
       console.log('   Password: admin123');
     }
 
     // Create demo admin user
-    const existingDemoAdmin = await User.findOne({ mobileNumber: '8888888888' });
+    const existingDemoAdmin = await User.findOne({ username: 'demoadmin' });
     if (!existingDemoAdmin) {
       const passwordHash = await bcrypt.hash('admin123', 10);
       await User.create({
         corporation: corporation._id,
         fullName: 'Demo Admin',
-        mobileNumber: '8888888888',
+        username: 'demoadmin',
         passwordHash,
         role: 'admin',
         isActive: true
       });
       console.log('✅ Demo Admin created:');
-      console.log('   Mobile: 8888888888');
+      console.log('   Username: demoadmin');
       console.log('   Password: admin123');
     } else {
       // Update existing user to admin role
       existingDemoAdmin.role = 'admin';
       await existingDemoAdmin.save();
-      console.log('ℹ️ Updated existing user to admin role:', existingDemoAdmin.mobileNumber);
+      console.log('ℹ️ Updated existing user to admin role:', existingDemoAdmin.username);
     }
 
     // Seed financial years
@@ -99,11 +99,11 @@ async function seedAdmin() {
     console.log('  LOGIN CREDENTIALS');
     console.log('═══════════════════════════════════════════');
     console.log('  Superadmin:');
-    console.log('    Mobile: 9999999999');
+    console.log('    Username: superadmin');
     console.log('    Password: admin123');
     console.log('');
     console.log('  Admin:');
-    console.log('    Mobile: 8888888888');
+    console.log('    Username: demoadmin');
     console.log('    Password: admin123');
     console.log('═══════════════════════════════════════════\n');
 

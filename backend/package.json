@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "seed": "node seeds/seedData.js",
     "add-sample": "node seeds/addSampleEntries.js",
-    "wipe-entries": "node seeds/wipeKraEntries.js DELETE_KRA_ENTRIES"
+    "wipe-entries": "node seeds/wipeKraEntries.js DELETE_KRA_ENTRIES",
+    "setup-one-corp-logins": "node scripts/setupOneCorporationLogins.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

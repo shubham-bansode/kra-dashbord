@@ -12,6 +12,25 @@ function normalizeName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
+function toUsernameBase(value) {
+  const base = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '');
+  return base || 'admin.user';
+}
+
+async function findAvailableUsername(base) {
+  let idx = 0;
+  while (idx < 5000) {
+    const candidate = idx === 0 ? base : `${base}.${idx + 1}`;
+    const exists = await User.findOne({ username: candidate }).select('_id').lean();
+    if (!exists) return candidate;
+    idx += 1;
+  }
+  throw new Error(`Unable to allocate unique username for: ${base}`);
+}
+
 async function findAvailableMobile(start = 9000000000) {
   let candidate = start;
   // keep in valid Indian mobile range [6-9]\d{9}
@@ -48,7 +67,7 @@ async function main() {
     const corpCode = normalizeName(corp.code) || corpName;
 
     let adminUser = await User.findOne({ corporation: corp._id, role: 'admin' })
-      .select('fullName mobileNumber role corporation')
+      .select('fullName username mobileNumber role corporation')
       .lean();
 
     if (adminUser) {
@@ -57,6 +76,7 @@ async function main() {
         corporation: corpName,
         corporationCode: corpCode,
         fullName: adminUser.fullName,
+        username: adminUser.username,
         mobileNumber: adminUser.mobileNumber,
         password: '(unchanged)'
       });
@@ -67,10 +87,12 @@ async function main() {
     mobileSeed = Number(mobileNumber) + 1;
 
     const fullName = `${corpCode} Admin`;
+    const username = await findAvailableUsername(toUsernameBase(`${corpCode}.admin`));
 
     const user = await User.create({
       corporation: corp._id,
       fullName,
+      username,
       mobileNumber,
       passwordHash,
       role: 'admin',
@@ -82,6 +104,7 @@ async function main() {
       corporation: corpName,
       corporationCode: corpCode,
       fullName: user.fullName,
+      username: user.username,
       mobileNumber: user.mobileNumber,
       password: DEFAULT_PASSWORD
     });
@@ -90,7 +113,7 @@ async function main() {
   console.log('\\n=== Corporation Admin Accounts (Top 5 Corporations) ===');
   createdOrExisting.forEach((row, idx) => {
     console.log(
-      `${idx + 1}. [${row.status.toUpperCase()}] ${row.corporation} (${row.corporationCode}) | ${row.fullName} | ${row.mobileNumber} | Password: ${row.password}`
+      `${idx + 1}. [${row.status.toUpperCase()}] ${row.corporation} (${row.corporationCode}) | ${row.fullName} | Username: ${row.username} | Mobile: ${row.mobileNumber} | Password: ${row.password}`
     );
   });
 

@@ -379,7 +379,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
       selectedKraIds,
       remarks: req.body.remarks || '',
       contactNumber: req.body.contactNumber,
-      submittedBy: req.body.submittedBy || req.user.mobileNumber,
+      submittedBy: req.body.submittedBy || req.user.username || req.user.mobileNumber,
       submittedAt: new Date()
     };
 
@@ -502,7 +502,7 @@ router.put('/:id', auth, validateSubmission, validateDateYearMatch, async (req, 
       selectedKraIds,
       remarks: req.body.remarks || '',
       contactNumber: req.body.contactNumber,
-      submittedBy: req.body.submittedBy || req.user.mobileNumber
+      submittedBy: req.body.submittedBy || req.user.username || req.user.mobileNumber
     };
 
     const names = await resolveHierarchyNames({
@@ -673,7 +673,7 @@ router.post('/bulk', auth, async (req, res) => {
     const achievementDate = entries[0].achievementDate;
     const contactNumber = entries[0].contactNumber;
     const remarks = entries[0].remarks || '';
-    const submittedBy = entries[0].submittedBy || req.user.mobileNumber;
+    const submittedBy = entries[0].submittedBy || req.user.username || req.user.mobileNumber;
 
     // Check duplicate at submission level
     const duplicate = await KraMonthlyEntry.checkDuplicate({

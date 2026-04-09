@@ -4,6 +4,9 @@ const KraMonthlyEntry = require('../models/KraMonthlyEntry');
 const mongoose = require('mongoose');
 const Kra = require('../models/Kra');
 const Division = require('../models/Division');
+const Corporation = require('../models/Corporation');
+const Region = require('../models/Region');
+const Circle = require('../models/Circle');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 
@@ -248,6 +251,74 @@ async function backfillCorporationNamesFromDivisionSnapshots(rows, grouping) {
     if (!inferredName) return row;
     return { ...row, name: inferredName };
   });
+}
+
+async function getScopedEntitiesForGrouping(grouping, baseMatch = {}) {
+  const g = grouping?.groupBy;
+
+  if (g === 'corporation') {
+    const filter = {};
+    if (baseMatch?.corporation) filter._id = baseMatch.corporation;
+    return Corporation.find(filter).select('_id name').sort({ name: 1 }).lean();
+  }
+
+  if (g === 'region') {
+    const filter = {};
+    if (baseMatch?.corporation) filter.corporation = baseMatch.corporation;
+    if (baseMatch?.region) filter._id = baseMatch.region;
+    return Region.find(filter).select('_id name').sort({ name: 1 }).lean();
+  }
+
+  if (g === 'circle') {
+    const filter = {};
+    if (baseMatch?.corporation) filter.corporation = baseMatch.corporation;
+    if (baseMatch?.region) filter.region = baseMatch.region;
+    if (baseMatch?.circle) filter._id = baseMatch.circle;
+    return Circle.find(filter).select('_id name').sort({ name: 1 }).lean();
+  }
+
+  if (g === 'division') {
+    const filter = {};
+    if (baseMatch?.corporation) filter.corporation = baseMatch.corporation;
+    if (baseMatch?.region) filter.region = baseMatch.region;
+    if (baseMatch?.circle) filter.circle = baseMatch.circle;
+    if (baseMatch?.division) filter._id = baseMatch.division;
+    return Division.find(filter).select('_id name').sort({ name: 1 }).lean();
+  }
+
+  return [];
+}
+
+function withZeroFilledEntities(rows = [], entities = []) {
+  const byId = new Map(
+    (Array.isArray(rows) ? rows : []).map((row) => [String(row?._id || ''), row])
+  );
+
+  return (Array.isArray(entities) ? entities : [])
+    .map((entity) => {
+      const id = String(entity?._id || '');
+      if (!id) return null;
+      const existing = byId.get(id);
+      if (existing) {
+        return {
+          ...existing,
+          _id: entity._id,
+          name: String(existing?.name || '').trim() || String(entity?.name || '').trim() || 'Unknown',
+          totalAchievement: Number(existing?.totalAchievement || 0),
+          totalTarget: Number(existing?.totalTarget || 0),
+          achievementPercentage: Number(existing?.achievementPercentage || 0)
+        };
+      }
+
+      return {
+        _id: entity._id,
+        name: String(entity?.name || '').trim() || 'Unknown',
+        totalAchievement: 0,
+        totalTarget: 0,
+        achievementPercentage: 0
+      };
+    })
+    .filter(Boolean);
 }
 
 async function resolveKraIdParam(kraParam) {
@@ -815,12 +886,27 @@ router.get('/achievement-bar', async (req, res) => {
           totalTarget: { $round: ['$totalTarget', 2] },
           achievementPercentage: 1
         }
-      },
-      { $sort: { achievementPercentage: mode === 'bottom' ? 1 : -1 } },
-      { $limit: limit }
+      }
     ]);
 
-    const data = await backfillCorporationNamesFromDivisionSnapshots(rawData, grouping);
+    const entities = await getScopedEntitiesForGrouping(grouping, baseMatch);
+    const mergedRows = entities.length > 0
+      ? withZeroFilledEntities(rawData, entities)
+      : (Array.isArray(rawData) ? rawData : []);
+
+    const sortedRows = [...mergedRows].sort((a, b) => {
+      const aPct = Number(a?.achievementPercentage || 0);
+      const bPct = Number(b?.achievementPercentage || 0);
+      if (mode === 'bottom') {
+        if (aPct !== bPct) return aPct - bPct;
+      } else {
+        if (aPct !== bPct) return bPct - aPct;
+      }
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    });
+
+    const limitedRows = sortedRows.slice(0, limit);
+    const data = await backfillCorporationNamesFromDivisionSnapshots(limitedRows, grouping);
 
     res.json({ success: true, period, data });
   } catch (error) {
@@ -1023,7 +1109,19 @@ router.get('/rank-table', async (req, res) => {
       .toArray();
     const nameById = new Map(entities.map((e) => [String(e._id), e.name]));
 
-    const byEntity = new Map();
+    const scopedEntities = await getScopedEntitiesForGrouping(grouping, baseMatch);
+    const byEntity = new Map(
+      scopedEntities.map((entity) => [
+        String(entity?._id || ''),
+        {
+          entityId: String(entity?._id || ''),
+          name: String(entity?.name || '').trim(),
+          prev: 0,
+          curr: 0
+        }
+      ])
+    );
+
     for (const r of rows) {
       const key = String(r.entityId);
       const resolvedName =
@@ -1036,7 +1134,10 @@ router.get('/rank-table', async (req, res) => {
 
     const list = [...byEntity.values()]
       .filter((x) => x.name)
-      .sort((a, b) => b.curr - a.curr)
+      .sort((a, b) => {
+        if (b.curr !== a.curr) return b.curr - a.curr;
+        return String(a.name).localeCompare(String(b.name));
+      })
       .map((x, idx) => ({
         ...x,
         rank: idx + 1
@@ -1044,7 +1145,10 @@ router.get('/rank-table', async (req, res) => {
 
     const prevRanks = [...byEntity.values()]
       .filter((x) => x.name)
-      .sort((a, b) => b.prev - a.prev)
+      .sort((a, b) => {
+        if (b.prev !== a.prev) return b.prev - a.prev;
+        return String(a.name).localeCompare(String(b.name));
+      })
       .reduce((acc, x, i) => {
         acc.set(x.entityId, i + 1);
         return acc;

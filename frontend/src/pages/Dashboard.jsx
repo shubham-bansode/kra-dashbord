@@ -153,6 +153,67 @@ const sortByFixedKraOrder = (rows = []) => {
   });
 };
 
+const toTitleCaseWord = (value) => {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+};
+
+const toDivisionShortLabel = (fullName) => {
+  const raw = String(fullName || "").trim();
+  if (!raw) return "";
+
+  const parts = raw.split(/\s[-–—]\s/);
+  const left = String(parts[0] || "").trim();
+  const right = String(parts[1] || "").trim();
+
+  const leftTokens = left
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const skip = new Set([
+    "executive",
+    "exective",
+    "engineer",
+    "the",
+    "of",
+    "and",
+  ]);
+  const mappedLetter = {
+    division: "D",
+    development: "D",
+    irrigation: "I",
+    irregation: "I",
+    project: "P",
+    canal: "C",
+  };
+
+  let acronym = "";
+  for (let i = 0; i < leftTokens.length; i += 1) {
+    const tok = leftTokens[i];
+    if (skip.has(tok)) continue;
+    if (/^\d+$/.test(tok)) {
+      acronym += tok;
+      continue;
+    }
+    if (tok === "no" && /^\d+$/.test(leftTokens[i + 1] || "")) {
+      continue;
+    }
+    acronym += mappedLetter[tok] || tok.charAt(0).toUpperCase();
+  }
+
+  const rightShort = toTitleCaseWord(right.split(/\s+/)[0] || "");
+  const core = `EE${acronym}`;
+  return rightShort ? `${core}_${rightShort}` : core;
+};
+
+const formatBarEntityLabel = (name, groupBy) => {
+  if (groupBy === "division") return toDivisionShortLabel(name);
+  return String(name || "");
+};
+
 const normalizeBarRows = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
     .map((row) => ({
@@ -810,6 +871,20 @@ export default function Dashboard() {
     ...bottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
   );
   const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
+  const activeGroupBy = getGroupByForSelection();
+
+  const overallTotals = (Array.isArray(kraWiseData) ? kraWiseData : []).reduce(
+    (acc, row) => {
+      acc.totalAchievement += toSafeNumber(row?.totalAchievement);
+      acc.totalTarget += toSafeNumber(row?.totalTarget);
+      return acc;
+    },
+    { totalAchievement: 0, totalTarget: 0 },
+  );
+  const overallAchievementPct =
+    overallTotals.totalTarget > 0
+      ? (overallTotals.totalAchievement / overallTotals.totalTarget) * 100
+      : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-violet-50/20 py-6 px-3 md:px-6">
@@ -1089,6 +1164,9 @@ export default function Dashboard() {
                   />
                   <XAxis
                     dataKey="name"
+                    tickFormatter={(value) =>
+                      formatBarEntityLabel(value, activeGroupBy)
+                    }
                     interval={0}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
                     axisLine={false}
@@ -1198,6 +1276,9 @@ export default function Dashboard() {
                   />
                   <XAxis
                     dataKey="name"
+                    tickFormatter={(value) =>
+                      formatBarEntityLabel(value, activeGroupBy)
+                    }
                     interval={0}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
                     axisLine={false}
@@ -1289,17 +1370,17 @@ export default function Dashboard() {
                 <XAxis
                   type="category"
                   dataKey="label"
-                  tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                  axisLine={false}
-                  tickLine={false}
+                  tick={{ fill: "#000000", fontSize: 11, fontWeight: 700 }}
+                  axisLine={{ stroke: "#000000", strokeWidth: 1.2 }}
+                  tickLine={{ stroke: "#000000", strokeWidth: 1 }}
                 />
                 <YAxis
                   type="number"
                   domain={[0, 100]}
                   tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
+                  tick={{ fill: "#000000", fontSize: 11, fontWeight: 700 }}
+                  axisLine={{ stroke: "#000000", strokeWidth: 1.2 }}
+                  tickLine={{ stroke: "#000000", strokeWidth: 1 }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1514,6 +1595,36 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
+                <div className="mt-2 border-t border-slate-200 pt-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
+                      {t("एकूण साध्य", "overall achivments")}
+                    </span>
+                    <span
+                      className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${getPercentBadgeClass(overallAchievementPct)}`}
+                    >
+                      {Number(overallAchievementPct || 0).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-900 rounded-full transition-all duration-700 ease-out"
+                      style={{
+                        width: `${Math.max(0, Math.min(Number(overallAchievementPct || 0), 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-1 text-[10px] text-slate-500 font-semibold">
+                    <span>
+                      {t("साध्य", "Ach")}:{" "}
+                      {overallTotals.totalAchievement.toFixed(1)}
+                    </span>
+                    <span>
+                      {t("लक्ष्य", "Target")}:{" "}
+                      {overallTotals.totalTarget.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
                 {kraWiseData.length === 0 && (
                   <p className="text-center text-slate-400 text-sm py-8">
                     {t("डेटा उपलब्ध नाही", "No data available")}
@@ -1631,12 +1742,12 @@ export default function Dashboard() {
               <div>
                 <h3 className="text-lg font-extrabold text-slate-800">
                   {t(
-                    "चालू वर्ष KRA व मागील वर्ष KRA तुलना",
-                    "Comparison of current year KRA vs previous year KRA",
+                    "चालू महिना KRA व मागील महिना KRA तुलना",
+                    "Comparison of current month KRA vs previous month KRA",
                   )}
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
-                  {t("वर्षनिहाय तुलना", "Year-wise comparison")}
+                  {t("महिनानिहाय तुलना", "Month-wise comparison")}
                 </p>
               </div>
             </div>
@@ -1650,18 +1761,18 @@ export default function Dashboard() {
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {t(
-                        "मागील वर्ष टक्केवारी",
+                        "मागील महिना % साध्य",
                         previousFyLabel
-                          ? `Previous Year Percentage (${previousFyLabel})`
-                          : "Previous Year Percentage",
+                          ? `Previous month % achivment (${previousFyLabel})`
+                          : "Previous month % achivment",
                       )}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {t(
-                        "चालू वर्ष टक्केवारी",
+                        "चालू महिना % साध्य",
                         currentFyLabel
-                          ? `Current Year Percentage (${currentFyLabel})`
-                          : "Current Year Percentage",
+                          ? `Current month % achivment (${currentFyLabel})`
+                          : "Current month % achivment",
                       )}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
