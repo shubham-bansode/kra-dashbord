@@ -7,6 +7,7 @@ const Corporation = require('../models/Corporation');
 const Kra = require('../models/Kra');
 const Division = require('../models/Division');
 const Circle = require('../models/Circle');
+const User = require('../models/User');
 const auth = require('../middleware/auth');
 const { getAllKrasAsync } = require('../config/kraMaster');
 const Region = require('../models/Region');
@@ -87,6 +88,59 @@ async function resolveHierarchyNames({ corporationId, regionId, circleId, divisi
     circleName: circleDoc?.name || '',
     divisionName: divisionDoc?.name || ''
   };
+}
+
+async function getSubmissionHierarchyForUser(req, incoming) {
+  const user = await User.findById(req.user.userId)
+    .select('role hierarchyLevel corporation region circle division isActive')
+    .lean();
+
+  if (!user || !user.isActive) {
+    return { error: 'Unauthorized user context' };
+  }
+
+  const normalized = {
+    corporation: incoming.corporation || null,
+    region: incoming.region || null,
+    circle: incoming.circle || null,
+    division: incoming.division || null
+  };
+
+  const role = String(user.role || '').toLowerCase();
+  const level = String(user.hierarchyLevel || '').toLowerCase();
+
+  if (role === 'admin' || role === 'superadmin') {
+    return { hierarchy: normalized };
+  }
+
+  if (!user.corporation) {
+    return { error: 'User hierarchy mapping is incomplete (corporation missing)' };
+  }
+
+  // Always anchor normal users to their mapped corporation.
+  normalized.corporation = user.corporation;
+
+  if (level === 'division') {
+    if (!user.region || !user.circle || !user.division) {
+      return { error: 'User hierarchy mapping is incomplete for division level' };
+    }
+    normalized.region = user.region;
+    normalized.circle = user.circle;
+    normalized.division = user.division;
+  } else if (level === 'circle') {
+    if (!user.region || !user.circle) {
+      return { error: 'User hierarchy mapping is incomplete for circle level' };
+    }
+    normalized.region = user.region;
+    normalized.circle = user.circle;
+  } else if (level === 'region') {
+    if (!user.region) {
+      return { error: 'User hierarchy mapping is incomplete for region level' };
+    }
+    normalized.region = user.region;
+  }
+
+  return { hierarchy: normalized };
 }
 
 function parseKraYear(kraYear) {
@@ -301,8 +355,23 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
       });
     }
     
+    const resolved = await getSubmissionHierarchyForUser(req, {
+      corporation: req.body.corporation,
+      region: req.body.region,
+      circle: req.body.circle,
+      division: req.body.division
+    });
+    if (resolved.error) {
+      return res.status(403).json({
+        success: false,
+        message: resolved.error
+      });
+    }
+
+    const resolvedHierarchy = resolved.hierarchy;
+
     // Verify corporation exists and check if it requires regions
-    const corporation = await Corporation.findById(req.body.corporation);
+    const corporation = await Corporation.findById(resolvedHierarchy.corporation);
     if (!corporation) {
       return res.status(400).json({
         success: false,
@@ -311,9 +380,9 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
     }
     
     // If corporation has regions, region and circle are required
-    let region = corporation.hasRegions ? req.body.region : null;
-    let circle = corporation.hasRegions ? req.body.circle : null;
-    const division = corporation.hasRegions ? req.body.division : null;
+    let region = corporation.hasRegions ? resolvedHierarchy.region : null;
+    let circle = corporation.hasRegions ? resolvedHierarchy.circle : null;
+    const division = corporation.hasRegions ? resolvedHierarchy.division : null;
 
     const hierarchy = await validateHierarchyStrict({
       corporationDoc: corporation,
@@ -353,7 +422,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
 
     // Check for duplicate monthly submission
     const duplicate = await KraMonthlyEntry.checkDuplicate({
-      corporation: req.body.corporation,
+      corporation: resolvedHierarchy.corporation,
       region,
       circle,
       division,
@@ -369,7 +438,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
     }
 
     const entryPayload = {
-      corporation: req.body.corporation,
+      corporation: resolvedHierarchy.corporation,
       region,
       circle,
       division,
@@ -384,7 +453,7 @@ router.post('/', auth, validateSubmission, validateDateYearMatch, async (req, re
     };
 
     const names = await resolveHierarchyNames({
-      corporationId: req.body.corporation,
+      corporationId: resolvedHierarchy.corporation,
       regionId: region,
       circleId: circle,
       divisionId: division
@@ -640,8 +709,23 @@ router.post('/bulk', auth, async (req, res) => {
       });
     }
 
+    const resolved = await getSubmissionHierarchyForUser(req, {
+      corporation: entries[0].corporation,
+      region: entries[0].region,
+      circle: entries[0].circle,
+      division: entries[0].division
+    });
+    if (resolved.error) {
+      return res.status(403).json({
+        success: false,
+        message: resolved.error
+      });
+    }
+
+    const resolvedHierarchy = resolved.hierarchy;
+
     // Verify corporation exists (all entries should have same corporation)
-    const corporationId = entries[0].corporation;
+    const corporationId = resolvedHierarchy.corporation;
     const corporation = await Corporation.findById(corporationId);
     if (!corporation) {
       return res.status(400).json({
@@ -651,9 +735,9 @@ router.post('/bulk', auth, async (req, res) => {
     }
 
     // Validate corporation-specific requirements
-    let region = corporation.hasRegions ? entries[0].region : null;
-    let circle = corporation.hasRegions ? entries[0].circle : null;
-    const division = corporation.hasRegions ? entries[0].division : null;
+    let region = corporation.hasRegions ? resolvedHierarchy.region : null;
+    let circle = corporation.hasRegions ? resolvedHierarchy.circle : null;
+    const division = corporation.hasRegions ? resolvedHierarchy.division : null;
 
     const hierarchy = await validateHierarchyStrict({
       corporationDoc: corporation,

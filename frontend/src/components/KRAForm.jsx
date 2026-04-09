@@ -155,9 +155,19 @@ const KRAForm = () => {
   const { user } = useAuth();
   const { language, t, tp } = useLanguage();
   const userCorporationId = user?.corporation?._id || user?.corporation || "";
+  const userRegionId = user?.region?._id || user?.region || "";
+  const userCircleId = user?.circle?._id || user?.circle || "";
+  const userDivisionId = user?.division?._id || user?.division || "";
+  const userHierarchyLevel = String(user?.hierarchyLevel || "").toLowerCase();
+  const isScopedUser = String(user?.role || "").toLowerCase() === "user";
   const userMobileNumber = user?.mobileNumber || "";
   const userFullName = user?.fullName || "";
-  const isCorporationLocked = Boolean(userCorporationId);
+  const isCorporationLocked = isScopedUser && Boolean(userCorporationId);
+  const isRegionLocked =
+    isScopedUser && ["region", "circle", "division"].includes(userHierarchyLevel);
+  const isCircleLocked =
+    isScopedUser && ["circle", "division"].includes(userHierarchyLevel);
+  const isDivisionLocked = isScopedUser && userHierarchyLevel === "division";
 
   // Master Data States
   const [corporations, setCorporations] = useState([]);
@@ -353,22 +363,22 @@ const KRAForm = () => {
 
   // Pre-fill locked user fields
   useEffect(() => {
-    if (!userCorporationId && !userMobileNumber) return;
+    if (!userCorporationId && !userMobileNumber && !userRegionId && !userCircleId && !userDivisionId) return;
 
     setFormData((prev) => {
       const next = { ...prev };
       if (userCorporationId && prev.corporation !== userCorporationId) {
         next.corporation = userCorporationId;
-        next.region = "";
-        next.circle = "";
-        next.division = "";
       }
+      if (userRegionId) next.region = userRegionId;
+      if (userCircleId) next.circle = userCircleId;
+      if (userDivisionId) next.division = userDivisionId;
       if (userMobileNumber && !prev.contactNumber) {
         next.contactNumber = userMobileNumber;
       }
       return next;
     });
-  }, [userCorporationId, userMobileNumber]);
+  }, [userCorporationId, userMobileNumber, userRegionId, userCircleId, userDivisionId]);
 
   // Fetch regions when corporation changes
   useEffect(() => {
@@ -429,6 +439,15 @@ const KRAForm = () => {
     fetchCircles();
   }, [formData.region, regions]);
 
+  useEffect(() => {
+    if (!userRegionId || !regions.length) return;
+    if (formData.region) return;
+    const found = regions.some((r) => String(r._id) === String(userRegionId));
+    if (found) {
+      setFormData((prev) => ({ ...prev, region: userRegionId }));
+    }
+  }, [regions, userRegionId, formData.region]);
+
   // Fetch divisions when circle changes
   useEffect(() => {
     const fetchDivisions = async () => {
@@ -448,6 +467,24 @@ const KRAForm = () => {
 
     fetchDivisions();
   }, [formData.circle]);
+
+  useEffect(() => {
+    if (!userCircleId || !circles.length) return;
+    if (formData.circle) return;
+    const found = circles.some((c) => String(c._id) === String(userCircleId));
+    if (found) {
+      setFormData((prev) => ({ ...prev, circle: userCircleId }));
+    }
+  }, [circles, userCircleId, formData.circle]);
+
+  useEffect(() => {
+    if (!userDivisionId || !divisions.length) return;
+    if (formData.division) return;
+    const found = divisions.some((d) => String(d._id) === String(userDivisionId));
+    if (found) {
+      setFormData((prev) => ({ ...prev, division: userDivisionId }));
+    }
+  }, [divisions, userDivisionId, formData.division]);
 
   // Reset KRA table data when config changes
   useEffect(() => {
@@ -1320,7 +1357,8 @@ const KRAForm = () => {
                       className={`form-select ${errors.region && touched.region ? "input-error" : ""} ${!formData.corporation || !selectedCorporation?.hasRegions ? "bg-slate-100 cursor-not-allowed" : ""}`}
                       disabled={
                         !formData.corporation ||
-                        !selectedCorporation?.hasRegions
+                        !selectedCorporation?.hasRegions ||
+                        isRegionLocked
                       }
                     >
                       <option value="">
@@ -1363,7 +1401,9 @@ const KRAForm = () => {
                       onBlur={handleBlur}
                       className={`form-select ${errors.circle && touched.circle ? "input-error" : ""} ${!formData.region || !selectedCorporation?.hasRegions ? "bg-slate-100 cursor-not-allowed" : ""}`}
                       disabled={
-                        !formData.region || !selectedCorporation?.hasRegions
+                        !formData.region ||
+                        !selectedCorporation?.hasRegions ||
+                        isCircleLocked
                       }
                     >
                       <option value="">
@@ -1405,7 +1445,9 @@ const KRAForm = () => {
                       onBlur={handleBlur}
                       className={`form-select ${errors.division && touched.division ? "input-error" : ""} ${!formData.circle || !selectedCorporation?.hasRegions ? "bg-slate-100 cursor-not-allowed" : ""}`}
                       disabled={
-                        !formData.circle || !selectedCorporation?.hasRegions
+                        !formData.circle ||
+                        !selectedCorporation?.hasRegions ||
+                        isDivisionLocked
                       }
                     >
                       <option value="">
