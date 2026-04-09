@@ -7,6 +7,30 @@ const userSchema = new mongoose.Schema(
       ref: 'Corporation',
       required: [true, 'Corporation is required']
     },
+    region: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Region',
+      required: false,
+      default: null
+    },
+    circle: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Circle',
+      required: false,
+      default: null
+    },
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: false,
+      default: null
+    },
+    hierarchyLevel: {
+      type: String,
+      enum: ['corporation', 'region', 'circle', 'division', 'admin', 'superadmin'],
+      required: false,
+      default: 'corporation'
+    },
     fullName: {
       type: String,
       required: [true, 'Full name is required'],

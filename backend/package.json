@@ -9,7 +9,11 @@
     "seed": "node seeds/seedData.js",
     "add-sample": "node seeds/addSampleEntries.js",
     "wipe-entries": "node seeds/wipeKraEntries.js DELETE_KRA_ENTRIES",
-    "setup-one-corp-logins": "node scripts/setupOneCorporationLogins.js"
+    "wipe-users": "node scripts/wipeAllUsers.js",
+    "setup-one-corp-logins": "node scripts/setupOneCorporationLogins.js",
+    "setup-all-hierarchy-logins": "node scripts/setupAllHierarchyLogins.js",
+    "export-credentials-xl": "node scripts/exportAllUserCredentialsXl.js",
+    "rebuild-users-xl": "npm run wipe-users -- DELETE_ALL_USERS && npm run setup-all-hierarchy-logins && npm run export-credentials-xl"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
