@@ -87,17 +87,6 @@ const HomePage = () => {
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-            <button
-              type="button"
-              onClick={() => handleCardClick(token ? "/dashboard" : "/auth")}
-              className="px-8 py-4 rounded-lg font-semibold text-lg shadow-lg transition-all transform hover:scale-105 bg-white/10 border border-white/70 backdrop-blur-sm text-black hover:bg-white/20"
-            >
-              {token
-                ? t("डॅशबोर्ड उघडा →", "Open Dashboard →")
-                : t("लॉगिन करा →", "Login →")}
-            </button>
-          </div>
         </div>
       </section>
 

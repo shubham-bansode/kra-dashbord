@@ -52,10 +52,10 @@ const GlobalHeader = () => {
 
   return (
     <header className="sticky top-0 z-50 bg-white shadow-md">
-      {/* Main Navbar - Single Compact Row */}
-      <nav className="bg-gradient-to-r from-blue-700 via-blue-800 to-blue-900">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-center justify-between h-14">
+      {/* Main Navbar */}
+      <nav className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700">
+        <div className="max-w-[1700px] mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-20">
             {/* Left: Logo & Brand */}
             <div
               className="flex items-center gap-3 cursor-pointer"
@@ -64,28 +64,28 @@ const GlobalHeader = () => {
               <img
                 src="/images/जलसंपदा विभाग.png"
                 alt="जलसंपदा विभाग"
-                className="w-9 h-9 object-contain bg-white rounded-full p-0.5"
+                className="w-12 h-12 object-contain bg-white/15 rounded-full p-1 border border-white/30"
               />
               <div className="hidden sm:block">
-                <h1 className="text-white font-bold text-sm leading-tight">
+                <h1 className="text-white font-bold text-lg leading-tight">
                   जलसंपदा विभाग
                 </h1>
-                <p className="text-blue-200 text-[10px] leading-tight">
-                  KRA Report System
+                <p className="text-blue-100 text-sm leading-tight">
+                  महाराष्ट्र शासन, भारत
                 </p>
               </div>
             </div>
 
             {/* Center: Navigation Links (Desktop) */}
-            <div className="hidden lg:flex items-center gap-1">
+            <div className="hidden md:flex items-center gap-2">
               {navItems.map((item) => (
                 <button
                   key={item.path}
                   onClick={() => handleNavClick(item.path)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded transition-all ${
+                  className={`px-4 py-2.5 text-base font-semibold rounded transition-all ${
                     isActive(item.path)
-                      ? "bg-white/20 text-white"
-                      : "text-blue-100 hover:bg-white/10 hover:text-white"
+                      ? "bg-white/25 text-white"
+                      : "text-white/95 hover:bg-white/15 hover:text-white"
                   }`}
                 >
                   {t(item.label.mr, item.label.en)}
@@ -96,7 +96,7 @@ const GlobalHeader = () => {
               <button
                 type="button"
                 onClick={() => setLanguage(language === "en" ? "mr" : "en")}
-                className="ml-2 px-3 py-1.5 text-sm font-medium rounded transition-all text-blue-100 hover:bg-white/10 hover:text-white w-20 text-center"
+                className="ml-2 px-4 py-2.5 text-base font-semibold rounded transition-all text-white/95 hover:bg-white/15 hover:text-white w-24 text-center"
               >
                 {language === "en" ? "English" : "मराठी"}
               </button>
@@ -109,12 +109,12 @@ const GlobalHeader = () => {
                 <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                    className="flex items-center gap-2 pl-1 pr-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-all"
+                    className="flex items-center gap-2 pl-1 pr-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-full transition-all"
                   >
-                    <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-inner">
+                    <div className="w-9 h-9 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-base shadow-inner">
                       {user.fullName?.charAt(0).toUpperCase() || "U"}
                     </div>
-                    <span className="hidden md:block text-white text-sm font-medium max-w-[80px] truncate">
+                    <span className="hidden lg:block text-white text-base font-medium max-w-[90px] truncate">
                       {user.fullName?.split(" ")[0]}
                     </span>
                     <svg
@@ -196,7 +196,7 @@ const GlobalHeader = () => {
                 /* Single Login Button */
                 <button
                   onClick={() => navigate("/auth")}
-                  className="flex items-center gap-2 px-4 py-2 bg-white text-blue-700 text-sm font-semibold rounded-lg hover:bg-blue-50 transition-all shadow-sm"
+                  className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 text-base font-semibold rounded-lg hover:bg-blue-50 transition-all shadow-sm"
                 >
                   <svg
                     className="w-4 h-4"
@@ -215,10 +215,16 @@ const GlobalHeader = () => {
                 </button>
               )}
 
+              <img
+                src="/images/महाराष्ट्र शासन.png"
+                alt="महाराष्ट्र शासन"
+                className="hidden md:block w-12 h-12 object-contain bg-white/15 rounded-full p-1 border border-white/30"
+              />
+
               {/* Mobile Menu Button */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden p-2 text-white hover:bg-white/10 rounded-lg"
+                className="md:hidden p-2 text-white hover:bg-white/10 rounded-lg"
               >
                 <svg
                   className="w-5 h-5"
@@ -249,7 +255,7 @@ const GlobalHeader = () => {
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-white/10 bg-blue-900/95 backdrop-blur">
+          <div className="md:hidden border-t border-white/10 bg-blue-900/95 backdrop-blur">
             <div className="px-4 py-2 space-y-1">
               {/* Language Toggle */}
               <button
