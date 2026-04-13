@@ -7,54 +7,32 @@ const userSchema = new mongoose.Schema(
       ref: 'Corporation',
       required: [true, 'Corporation is required']
     },
-    region: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Region',
-      required: false,
-      default: null
-    },
-    circle: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Circle',
-      required: false,
-      default: null
-    },
-    division: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Division',
-      required: false,
-      default: null
-    },
-    hierarchyLevel: {
-      type: String,
-      enum: ['corporation', 'region', 'circle', 'division', 'admin', 'superadmin'],
-      required: false,
-      default: 'corporation'
-    },
     fullName: {
       type: String,
       required: [true, 'Full name is required'],
       trim: true
     },
-    username: {
+    userId: {
       type: String,
-      required: [true, 'Username is required'],
-      unique: true,
-      trim: true,
-      lowercase: true,
-      minlength: [3, 'Username must be at least 3 characters']
-    },
-    mobileNumber: {
-      type: String,
-      required: false,
       unique: true,
       sparse: true,
       trim: true,
+      lowercase: true,
       validate: {
         validator: function (v) {
-          if (typeof v === 'undefined' || v === null || String(v).trim() === '') {
-            return true;
-          }
+          if (v == null || v === '') return true;
+          return /^[a-z0-9._-]{3,30}$/.test(v);
+        },
+        message: 'User ID must be 3-30 characters and contain only lowercase letters, numbers, dot, underscore, or hyphen'
+      }
+    },
+    mobileNumber: {
+      type: String,
+      required: [true, 'Mobile number is required'],
+      unique: true,
+      trim: true,
+      validate: {
+        validator: function (v) {
           return /^[6-9]\d{9}$/.test(v);
         },
         message: 'Please enter a valid 10-digit Indian mobile number'

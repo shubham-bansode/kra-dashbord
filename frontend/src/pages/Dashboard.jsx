@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -32,7 +32,6 @@ import {
 import { generateKraYears } from "../utils/helpers";
 import { useLanguage } from "../i18n/LanguageContext";
 import { localizeName, localizeString } from "../utils/localize";
-import { useAuth } from "../auth/AuthContext";
 
 /* ── Vibrant multi-colour palette ── */
 const COLORS = [
@@ -56,7 +55,7 @@ const KRA_COLOR_BY_ID = {
   4: "#ef4444",
   5: "#8b5cf6",
   6: "#06b6d4",
-  7: "#7c3aed",
+  7: "#be185d",
 };
 
 /* ── Loading spinner ── */
@@ -154,67 +153,6 @@ const sortByFixedKraOrder = (rows = []) => {
   });
 };
 
-const toTitleCaseWord = (value) => {
-  const s = String(value || "").trim();
-  if (!s) return "";
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-};
-
-const toDivisionShortLabel = (fullName) => {
-  const raw = String(fullName || "").trim();
-  if (!raw) return "";
-
-  const parts = raw.split(/\s[-–—]\s/);
-  const left = String(parts[0] || "").trim();
-  const right = String(parts[1] || "").trim();
-
-  const leftTokens = left
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-
-  const skip = new Set([
-    "executive",
-    "exective",
-    "engineer",
-    "the",
-    "of",
-    "and",
-  ]);
-  const mappedLetter = {
-    division: "D",
-    development: "D",
-    irrigation: "I",
-    irregation: "I",
-    project: "P",
-    canal: "C",
-  };
-
-  let acronym = "";
-  for (let i = 0; i < leftTokens.length; i += 1) {
-    const tok = leftTokens[i];
-    if (skip.has(tok)) continue;
-    if (/^\d+$/.test(tok)) {
-      acronym += tok;
-      continue;
-    }
-    if (tok === "no" && /^\d+$/.test(leftTokens[i + 1] || "")) {
-      continue;
-    }
-    acronym += mappedLetter[tok] || tok.charAt(0).toUpperCase();
-  }
-
-  const rightShort = toTitleCaseWord(right.split(/\s+/)[0] || "");
-  const core = `EE${acronym}`;
-  return rightShort ? `${core}_${rightShort}` : core;
-};
-
-const formatBarEntityLabel = (name, groupBy) => {
-  if (groupBy === "division") return toDivisionShortLabel(name);
-  return String(name || "");
-};
-
 const normalizeBarRows = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
     .map((row) => ({
@@ -279,8 +217,6 @@ const ChartLoadingState = () => (
 
 export default function Dashboard() {
   const { t, language } = useLanguage();
-  const { user } = useAuth();
-  const hasAppliedUserDefaults = useRef(false);
   const [summary, setSummary] = useState(null);
   const [entries, setEntries] = useState([]);
 
@@ -329,37 +265,6 @@ export default function Dashboard() {
     };
     loadMasterData();
   }, []);
-
-  const toId = (value) => {
-    if (!value) return "";
-    if (typeof value === "string") return value;
-    return String(value?._id || value?.id || "");
-  };
-
-  useEffect(() => {
-    if (hasAppliedUserDefaults.current) return;
-    if (!Array.isArray(corporations) || corporations.length === 0) return;
-
-    const corpId = toId(user?.corporation);
-    const regionId = toId(user?.region);
-    const circleId = toId(user?.circle);
-    const divisionId = toId(user?.division);
-    const role = String(user?.role || "").toLowerCase();
-
-    // For normal users, default to their assigned hierarchy for focused dashboard view.
-    // Admin/superadmin keep global view by default.
-    if (role === "user" && (corpId || regionId || circleId || divisionId)) {
-      setFilters((prev) => ({
-        ...prev,
-        corporation: corpId || prev.corporation,
-        region: regionId || "",
-        circle: circleId || "",
-        division: divisionId || "",
-      }));
-    }
-
-    hasAppliedUserDefaults.current = true;
-  }, [user, corporations]);
 
   // Cascade: Corporation -> Regions
   useEffect(() => {
@@ -621,7 +526,7 @@ export default function Dashboard() {
           ...filterParams,
           groupBy,
           mode: "top",
-          limit: "all",
+          limit: "5",
         }),
         dashboardApi.getAchievementBar({
           ...filterParams,
@@ -688,6 +593,7 @@ export default function Dashboard() {
       const fallbackTopFromRanks = [...safeRankRows]
         .filter((r) => r.name)
         .sort((a, b) => b.currentMonthPercentage - a.currentMonthPercentage)
+        .slice(0, 5)
         .map((r) => ({
           _id: r.entityId,
           name: r.name,
@@ -904,20 +810,6 @@ export default function Dashboard() {
     ...bottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
   );
   const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
-  const activeGroupBy = getGroupByForSelection();
-
-  const overallTotals = (Array.isArray(kraWiseData) ? kraWiseData : []).reduce(
-    (acc, row) => {
-      acc.totalAchievement += toSafeNumber(row?.totalAchievement);
-      acc.totalTarget += toSafeNumber(row?.totalTarget);
-      return acc;
-    },
-    { totalAchievement: 0, totalTarget: 0 },
-  );
-  const overallAchievementPct =
-    overallTotals.totalTarget > 0
-      ? (overallTotals.totalAchievement / overallTotals.totalTarget) * 100
-      : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-violet-50/20 py-6 px-3 md:px-6">
@@ -1148,7 +1040,7 @@ export default function Dashboard() {
 
         {/* ═══════ TOP / BOTTOM BAR CHARTS ═══════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top performers (all entities in current hierarchy scope) */}
+          {/* Top 5 */}
           <SectionCard>
             <div className="flex items-center gap-3 mb-4">
               <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white flex items-center justify-center text-lg shadow-md">
@@ -1197,18 +1089,15 @@ export default function Dashboard() {
                   />
                   <XAxis
                     dataKey="name"
-                    tickFormatter={(value) =>
-                      formatBarEntityLabel(value, activeGroupBy)
-                    }
                     interval={0}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <YAxis
                     domain={[0, yDomainMax]}
                     tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <Tooltip
@@ -1250,6 +1139,14 @@ export default function Dashboard() {
             <p className="mt-3 text-[11px] font-semibold text-indigo-500 text-center bg-indigo-50 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
               {t("बारवर क्लिक करा ड्रिल-डाउनसाठी", "Click a bar to drill down")}
             </p>
+            {topBars.length > 0 && topBars.length < 5 && (
+              <p className="mt-2 text-center text-[11px] text-slate-400">
+                {t(
+                  "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
+                  "Fewer than 5 entities available",
+                )}
+              </p>
+            )}
           </SectionCard>
 
           {/* Bottom 5 */}
@@ -1301,18 +1198,15 @@ export default function Dashboard() {
                   />
                   <XAxis
                     dataKey="name"
-                    tickFormatter={(value) =>
-                      formatBarEntityLabel(value, activeGroupBy)
-                    }
                     interval={0}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <YAxis
                     domain={[0, yDomainMax]}
                     tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <Tooltip
@@ -1395,17 +1289,17 @@ export default function Dashboard() {
                 <XAxis
                   type="category"
                   dataKey="label"
-                  tick={{ fill: "#000000", fontSize: 11, fontWeight: 700 }}
-                  axisLine={{ stroke: "#000000", strokeWidth: 1.2 }}
-                  tickLine={{ stroke: "#000000", strokeWidth: 1 }}
+                  tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                  axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                  tickLine={false}
                 />
                 <YAxis
                   type="number"
                   domain={[0, 100]}
                   tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
-                  tick={{ fill: "#000000", fontSize: 11, fontWeight: 700 }}
-                  axisLine={{ stroke: "#000000", strokeWidth: 1.2 }}
-                  tickLine={{ stroke: "#000000", strokeWidth: 1 }}
+                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                  axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                  tickLine={false}
                 />
                 <Tooltip
                   contentStyle={{
@@ -1620,36 +1514,6 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
-                <div className="mt-2 border-t border-slate-200 pt-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
-                      {t("एकूण साध्य", "overall achivments")}
-                    </span>
-                    <span
-                      className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${getPercentBadgeClass(overallAchievementPct)}`}
-                    >
-                      {Number(overallAchievementPct || 0).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-900 rounded-full transition-all duration-700 ease-out"
-                      style={{
-                        width: `${Math.max(0, Math.min(Number(overallAchievementPct || 0), 100))}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-1 text-[10px] text-slate-500 font-semibold">
-                    <span>
-                      {t("साध्य", "Ach")}:{" "}
-                      {overallTotals.totalAchievement.toFixed(1)}
-                    </span>
-                    <span>
-                      {t("लक्ष्य", "Target")}:{" "}
-                      {overallTotals.totalTarget.toFixed(1)}
-                    </span>
-                  </div>
-                </div>
                 {kraWiseData.length === 0 && (
                   <p className="text-center text-slate-400 text-sm py-8">
                     {t("डेटा उपलब्ध नाही", "No data available")}
@@ -1767,8 +1631,8 @@ export default function Dashboard() {
               <div>
                 <h3 className="text-lg font-extrabold text-slate-800">
                   {t(
-                    "चालू महिना KRA व मागील महिना KRA तुलना",
-                    "Comparison of current month KRA vs previous month KRA",
+                    "चालू KRA व मागील KRA तुलना",
+                    "Comparison of current KRA vs previous KRA",
                   )}
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
@@ -1785,20 +1649,10 @@ export default function Dashboard() {
                       {getEntityLabel()}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t(
-                        "मागील महिना % साध्य",
-                        previousFyLabel
-                          ? `Previous month % achivment (${previousFyLabel})`
-                          : "Previous month % achivment",
-                      )}
+                      {t("मागील महिना टक्केवारी", "Previous Month Percentage")}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t(
-                        "चालू महिना % साध्य",
-                        currentFyLabel
-                          ? `Current month % achivment (${currentFyLabel})`
-                          : "Current month % achivment",
-                      )}
+                      {t("चालू महिना टक्केवारी", "Current Month Percentage")}
                     </th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {t("रँक", "Rank")}

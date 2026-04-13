@@ -755,7 +755,7 @@ router.get('/users',
       if (search) {
         filter.$or = [
           { fullName: { $regex: search, $options: 'i' } },
-          { username: { $regex: search, $options: 'i' } },
+          { userId: { $regex: search, $options: 'i' } },
           { mobileNumber: { $regex: search, $options: 'i' } }
         ];
       }
@@ -928,17 +928,14 @@ router.post(
   [
     body('corporation').notEmpty().withMessage('Corporation is required').isMongoId().withMessage('Invalid Corporation ID'),
     body('fullName').notEmpty().withMessage('Full name is required').isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
-    body('username')
+    body('userId')
       .notEmpty()
-      .withMessage('Username is required')
-      .isLength({ min: 3 })
-      .withMessage('Username must be at least 3 characters')
-      .matches(/^[a-zA-Z0-9._-]+$/)
-      .withMessage('Username may contain letters, numbers, dot, underscore and hyphen only'),
-    body('mobileNumber')
-      .optional({ values: 'falsy' })
-      .matches(/^[6-9]\d{9}$/)
-      .withMessage('Please enter a valid 10-digit Indian mobile number'),
+      .withMessage('User ID is required')
+      .isLength({ min: 3, max: 30 })
+      .withMessage('User ID must be between 3 and 30 characters')
+      .matches(/^[a-z0-9._-]+$/)
+      .withMessage('User ID can contain only lowercase letters, numbers, dot, underscore, and hyphen'),
+    body('mobileNumber').notEmpty().withMessage('Mobile number is required').matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
     body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('role').optional().isIn(['user', 'admin', 'superadmin']).withMessage('Invalid role')
   ],
@@ -953,9 +950,8 @@ router.post(
         });
       }
 
-      const { corporation, fullName, username, mobileNumber, password, role } = req.body;
-      const normalizedUsername = String(username || '').trim().toLowerCase();
-      const normalizedMobile = String(mobileNumber || '').trim();
+      const { corporation, fullName, mobileNumber, password, role } = req.body;
+      const normalizedUserId = String(req.body.userId || '').trim().toLowerCase();
 
       if (!isSuperAdmin(req) && role === 'superadmin') {
         return res.status(403).json({
@@ -990,30 +986,28 @@ router.post(
         });
       }
 
-      const existingByUsername = await User.findOne({ username: normalizedUsername });
-      if (existingByUsername) {
+      const existing = await User.findOne({ mobileNumber });
+      if (existing) {
         return res.status(409).json({
           success: false,
-          message: 'Username already registered'
+          message: 'Mobile number already registered'
         });
       }
 
-      if (normalizedMobile) {
-        const existingByMobile = await User.findOne({ mobileNumber: normalizedMobile });
-        if (existingByMobile) {
-          return res.status(409).json({
-            success: false,
-            message: 'Mobile number already registered'
-          });
-        }
+      const existingUserId = await User.findOne({ userId: normalizedUserId });
+      if (existingUserId) {
+        return res.status(409).json({
+          success: false,
+          message: 'User ID already registered'
+        });
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await User.create({
         corporation: targetCorporation,
         fullName,
-        username: normalizedUsername,
-        mobileNumber: normalizedMobile || undefined,
+        userId: normalizedUserId,
+        mobileNumber,
         passwordHash,
         role: role || 'user'
       });
@@ -1045,13 +1039,13 @@ router.put(
     param('id').isMongoId().withMessage('Invalid ID'),
     body('corporation').optional().isMongoId().withMessage('Invalid Corporation ID'),
     body('fullName').optional().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
-    body('username')
+    body('userId')
       .optional()
-      .isLength({ min: 3 })
-      .withMessage('Username must be at least 3 characters')
-      .matches(/^[a-zA-Z0-9._-]+$/)
-      .withMessage('Username may contain letters, numbers, dot, underscore and hyphen only'),
-    body('mobileNumber').optional({ values: 'falsy' }).matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
+      .isLength({ min: 3, max: 30 })
+      .withMessage('User ID must be between 3 and 30 characters')
+      .matches(/^[a-z0-9._-]+$/)
+      .withMessage('User ID can contain only lowercase letters, numbers, dot, underscore, and hyphen'),
+    body('mobileNumber').optional().matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
     body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('role').not().exists().withMessage('Use /users/:id/role to update role'),
     body('isActive').not().exists().withMessage('Use /users/:id/status to update status')
@@ -1093,33 +1087,30 @@ router.put(
       }
 
       if (typeof req.body.fullName === 'string') updates.fullName = req.body.fullName;
-      if (typeof req.body.username === 'string') updates.username = String(req.body.username).trim().toLowerCase();
-      if (typeof req.body.mobileNumber === 'string') {
-        const normalizedMobile = String(req.body.mobileNumber).trim();
-        updates.mobileNumber = normalizedMobile || undefined;
-      }
+      if (typeof req.body.userId === 'string') updates.userId = req.body.userId.trim().toLowerCase();
+      if (typeof req.body.mobileNumber === 'string') updates.mobileNumber = req.body.mobileNumber;
       if (typeof req.body.corporation === 'string') updates.corporation = req.body.corporation;
 
       if (req.body.password) {
         updates.passwordHash = await bcrypt.hash(req.body.password, 10);
       }
 
-      if (updates.username) {
-        const existingByUsername = await User.findOne({ username: updates.username, _id: { $ne: id } });
-        if (existingByUsername) {
+      if (updates.mobileNumber) {
+        const existing = await User.findOne({ mobileNumber: updates.mobileNumber, _id: { $ne: id } });
+        if (existing) {
           return res.status(409).json({
             success: false,
-            message: 'Username already registered'
+            message: 'Mobile number already registered'
           });
         }
       }
 
-      if (Object.prototype.hasOwnProperty.call(updates, 'mobileNumber') && updates.mobileNumber) {
-        const existingByMobile = await User.findOne({ mobileNumber: updates.mobileNumber, _id: { $ne: id } });
-        if (existingByMobile) {
+      if (updates.userId) {
+        const existing = await User.findOne({ userId: updates.userId, _id: { $ne: id } });
+        if (existing) {
           return res.status(409).json({
             success: false,
-            message: 'Mobile number already registered'
+            message: 'User ID already registered'
           });
         }
       }

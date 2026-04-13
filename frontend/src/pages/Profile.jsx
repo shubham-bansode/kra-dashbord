@@ -9,7 +9,7 @@ export default function Profile() {
 
   const [formData, setFormData] = useState({
     fullName: "",
-    username: "",
+    userId: "",
     mobileNumber: "",
   });
   const [errors, setErrors] = useState({});
@@ -27,8 +27,8 @@ export default function Profile() {
 
   useEffect(() => {
     setFormData({
-      fullName: "",
-      username: user?.username || "",
+      fullName: user?.fullName || "",
+      userId: user?.userId || "",
       mobileNumber: user?.mobileNumber || "",
     });
   }, [user]);
@@ -36,49 +36,11 @@ export default function Profile() {
   const hasChanges = useMemo(() => {
     return (
       (formData.fullName || "").trim() !== (user?.fullName || "").trim() ||
-      (formData.username || "").trim().toLowerCase() !==
-        (user?.username || "").trim().toLowerCase() ||
+      (formData.userId || "").trim().toLowerCase() !==
+        (user?.userId || "").trim().toLowerCase() ||
       (formData.mobileNumber || "").trim() !== (user?.mobileNumber || "").trim()
     );
   }, [formData, user]);
-
-  const scopedHierarchyInfo = useMemo(() => {
-    const level = String(user?.hierarchyLevel || "").toLowerCase();
-    const divisionName = String(user?.division?.name || "").trim();
-    const circleName = String(user?.circle?.name || "").trim();
-    const regionName = String(user?.region?.name || "").trim();
-    const corporationName = String(user?.corporation?.name || "").trim();
-
-    if (level === "division" || divisionName) {
-      return {
-        labelMr: "विभागाचे नाव",
-        labelEn: "Division Name",
-        value: divisionName || "-",
-      };
-    }
-
-    if (level === "circle" || circleName) {
-      return {
-        labelMr: "मंडळाचे नाव",
-        labelEn: "Circle Name",
-        value: circleName || "-",
-      };
-    }
-
-    if (level === "region" || regionName) {
-      return {
-        labelMr: "प्रदेशाचे नाव",
-        labelEn: "Region Name",
-        value: regionName || "-",
-      };
-    }
-
-    return {
-      labelMr: "महामंडळाचे नाव",
-      labelEn: "Corporation Name",
-      value: corporationName || "-",
-    };
-  }, [user]);
 
   const validate = () => {
     const nextErrors = {};
@@ -92,23 +54,14 @@ export default function Profile() {
       );
     }
 
-    const normalizedUsername = String(formData.username || "").trim();
-    if (!normalizedUsername) {
-      nextErrors.username = t("Username आवश्यक आहे", "Username is required");
-    } else if (normalizedUsername.length < 3) {
-      nextErrors.username = t(
-        "Username किमान 3 अक्षरांचे असावे",
-        "Username must be at least 3 characters",
-      );
-    } else if (!/^[a-zA-Z0-9._-]+$/.test(normalizedUsername)) {
-      nextErrors.username = t(
-        "Username मध्ये फक्त अक्षरे, अंक, dot, underscore, hyphen अनुमत आहेत",
-        "Username may contain letters, numbers, dot, underscore and hyphen only",
+    if (!/^[a-z0-9._-]{3,30}$/.test(String(formData.userId || "").trim())) {
+      nextErrors.userId = t(
+        "युजर आयडी 3-30 अक्षरांचा व लहान इंग्रजी अक्षरे/अंक/._- असावा",
+        "User ID must be 3-30 chars and use lowercase letters, numbers, . _ -",
       );
     }
 
-    const normalizedMobile = String(formData.mobileNumber || "").trim();
-    if (normalizedMobile && !/^[6-9]\d{9}$/.test(normalizedMobile)) {
+    if (!/^[6-9]\d{9}$/.test(String(formData.mobileNumber || "").trim())) {
       nextErrors.mobileNumber = t(
         "कृपया वैध 10 अंकी भारतीय मोबाईल क्रमांक प्रविष्ट करा",
         "Please enter a valid 10-digit Indian mobile number",
@@ -136,7 +89,9 @@ export default function Profile() {
       setIsSubmitting(true);
       const res = await authApi.updateProfile({
         fullName: String(formData.fullName || "").trim(),
-        username: String(formData.username || "").trim(),
+        userId: String(formData.userId || "")
+          .trim()
+          .toLowerCase(),
         mobileNumber: String(formData.mobileNumber || "").trim(),
       });
       updateLocalUser(res?.data?.data || null);
@@ -295,7 +250,7 @@ export default function Profile() {
         <form className="p-6 space-y-5" onSubmit={onSubmit}>
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">
-              {t("व्यक्तीचे नाव", "Person Name")}
+              {t("पूर्ण नाव", "Full Name")}
             </label>
             <input
               type="text"
@@ -313,31 +268,22 @@ export default function Profile() {
 
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">
-              {t(scopedHierarchyInfo.labelMr, scopedHierarchyInfo.labelEn)}
+              {t("वापरकर्ता आयडी", "User ID")}
             </label>
             <input
               type="text"
-              value={scopedHierarchyInfo.value}
-              readOnly
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-slate-100 cursor-not-allowed"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">
-              {t("यूजरनेम", "Username")}
-            </label>
-            <input
-              type="text"
-              value={formData.username}
+              value={formData.userId}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, username: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  userId: e.target.value.toLowerCase().trim(),
+                }))
               }
-              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 ${errors.username ? "border-red-400" : "border-slate-300"}`}
-              placeholder={t("यूजरनेम प्रविष्ट करा", "Enter username")}
+              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 ${errors.userId ? "border-red-400" : "border-slate-300"}`}
+              placeholder={t("उदा. user_01", "e.g. user_01")}
             />
-            {errors.username && (
-              <p className="text-xs text-red-600 mt-1">{errors.username}</p>
+            {errors.userId && (
+              <p className="text-xs text-red-600 mt-1">{errors.userId}</p>
             )}
           </div>
 

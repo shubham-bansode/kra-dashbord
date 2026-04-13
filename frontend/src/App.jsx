@@ -8,7 +8,7 @@ import Monitoring from "./pages/Monitoring";
 import Profile from "./pages/Profile";
 import GlobalHeader from "./components/GlobalHeader";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import DamPhotoSlideshowBackground from "./components/DamPhotoSlideshowBackground";
+import { RadialBackground } from "./components/light-theme-tailwind-css-background-snippet";
 
 // ============================================================================
 // MAIN APP COMPONENT
@@ -16,7 +16,8 @@ import DamPhotoSlideshowBackground from "./components/DamPhotoSlideshowBackgroun
 function App() {
   return (
     <div className="relative min-h-screen">
-      <DamPhotoSlideshowBackground />
+      {/* Radial Background */}
+      <RadialBackground />
 
       <div className="relative z-0">
         {/* Global Header - Sticky on all pages */}
@@ -69,7 +70,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          {/* Auth Routes */}
+          {/* Auth page with user/admin login */}
           <Route path="/login" element={<AuthPage />} />
           <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route path="/auth" element={<AuthPage />} />

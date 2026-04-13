@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { useEffect } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
 
 // ============================================================================
@@ -12,7 +13,7 @@ const getApiErrorMessage = (err, fallback) => {
 };
 
 // ============================================================================
-// AUTH PAGE - User Login & Admin Login
+// AUTH PAGE - Combined Login & Signup with Admin Login
 // ============================================================================
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export default function AuthPage() {
   const { user } = useAuth();
   const { t } = useLanguage();
 
-  // Determine initial tab from URL state
+  // Determine initial tab from URL state or path
   const getInitialTab = () => {
     if (location.state?.tab === "admin") return "admin";
     return "login";
@@ -131,7 +132,7 @@ export default function AuthPage() {
 function LoginForm({ onSuccess }) {
   const { login, logout } = useAuth();
   const { t } = useLanguage();
-  const [username, setUsername] = useState("");
+  const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -142,12 +143,12 @@ function LoginForm({ onSuccess }) {
     setIsSubmitting(true);
 
     try {
-      const res = await login({ username, password });
+      const res = await login({ userId, password });
       const user = res.data?.data?.user;
 
       // Check if user is admin trying to login via user form
       if (user?.role === "admin" || user?.role === "superadmin") {
-        logout();
+        logout(); // Logout the admin user
         setError(
           t(
             "प्रशासक खात्यांसाठी कृपया 'Admin Login' वापरा",
@@ -170,17 +171,17 @@ function LoginForm({ onSuccess }) {
       <div className="mb-4">
         <label
           className="block text-sm font-medium text-gray-700 mb-1"
-          htmlFor="login-username"
+          htmlFor="login-userid"
         >
-          {t("वापरकर्ता नाव", "Username")}
+          {t("वापरकर्ता आयडी", "User ID")}
         </label>
         <input
-          id="login-username"
+          id="login-userid"
           type="text"
           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="Enter username"
+          value={userId}
+          onChange={(e) => setUserId(e.target.value.toLowerCase().trim())}
+          placeholder="Enter your user ID"
           required
         />
       </div>
@@ -228,7 +229,7 @@ function LoginForm({ onSuccess }) {
 function AdminLoginForm({ onSuccess }) {
   const { login, logout } = useAuth();
   const { t } = useLanguage();
-  const [username, setUsername] = useState("");
+  const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -239,12 +240,12 @@ function AdminLoginForm({ onSuccess }) {
     setIsSubmitting(true);
 
     try {
-      const res = await login({ username, password });
+      const res = await login({ userId, password });
       const user = res.data?.data?.user;
 
       // Check if user has admin role
       if (user?.role !== "admin" && user?.role !== "superadmin") {
-        logout();
+        logout(); // Logout the non-admin user
         setError(
           t(
             "प्रवेश नाकारला. प्रशासक क्रेडेन्शियल आवश्यक.",
@@ -278,17 +279,17 @@ function AdminLoginForm({ onSuccess }) {
       <div className="mb-4">
         <label
           className="block text-sm font-medium text-gray-700 mb-1"
-          htmlFor="admin-username"
+          htmlFor="admin-userid"
         >
-          {t("प्रशासक वापरकर्ता नाव", "Admin Username")}
+          {t("प्रशासक वापरकर्ता आयडी", "Admin User ID")}
         </label>
         <input
-          id="admin-username"
+          id="admin-userid"
           type="text"
           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="Admin username"
+          value={userId}
+          onChange={(e) => setUserId(e.target.value.toLowerCase().trim())}
+          placeholder="Admin user ID"
           required
         />
       </div>

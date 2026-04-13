@@ -22,35 +22,13 @@ function signToken(user) {
   return jwt.sign(
     {
       userId: user._id,
-      username: user.username,
+      loginId: user.userId || user.mobileNumber,
+      mobileNumber: user.mobileNumber,
       role: user.role || 'user'
     },
     getJwtSecret(),
     { expiresIn: '7d' }
   );
-}
-
-function applyUserHierarchyPopulate(query) {
-  return query
-    .populate('corporation', 'name code location hasRegions')
-    .populate('region', 'name code')
-    .populate('circle', 'name code')
-    .populate('division', 'name code');
-}
-
-function userResponse(user) {
-  return {
-    id: user._id,
-    fullName: user.fullName,
-    username: user.username,
-    mobileNumber: user.mobileNumber,
-    corporation: user.corporation,
-    region: user.region || null,
-    circle: user.circle || null,
-    division: user.division || null,
-    hierarchyLevel: user.hierarchyLevel || null,
-    role: user.role || 'user'
-  };
 }
 
 // POST /api/auth/register
@@ -59,17 +37,7 @@ router.post(
   [
     body('corporation').notEmpty().withMessage('Corporation is required').isMongoId().withMessage('Invalid Corporation ID'),
     body('fullName').notEmpty().withMessage('Full name is required').isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
-    body('username')
-      .notEmpty()
-      .withMessage('Username is required')
-      .isLength({ min: 3 })
-      .withMessage('Username must be at least 3 characters')
-      .matches(/^[a-zA-Z0-9._-]+$/)
-      .withMessage('Username may contain letters, numbers, dot, underscore and hyphen only'),
-    body('mobileNumber')
-      .optional({ values: 'falsy' })
-      .matches(/^[6-9]\d{9}$/)
-      .withMessage('Please enter a valid 10-digit Indian mobile number'),
+    body('mobileNumber').notEmpty().withMessage('Mobile number is required').matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
     body('password').notEmpty().withMessage('Password is required').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
   ],
   async (req, res) => {
@@ -83,25 +51,16 @@ router.post(
         });
       }
 
-      const { corporation, fullName, username, mobileNumber, password } = req.body;
-      const normalizedUsername = String(username || '').trim().toLowerCase();
-      const normalizedMobile = String(mobileNumber || '').trim();
+      const { corporation, fullName, mobileNumber, password } = req.body;
 
       const corp = await Corporation.findById(corporation);
       if (!corp) {
         return res.status(400).json({ success: false, message: 'Invalid corporation selected' });
       }
 
-      const existingByUsername = await User.findOne({ username: normalizedUsername });
-      if (existingByUsername) {
-        return res.status(409).json({ success: false, message: 'Username already registered' });
-      }
-
-      if (normalizedMobile) {
-        const existingByMobile = await User.findOne({ mobileNumber: normalizedMobile });
-        if (existingByMobile) {
-          return res.status(409).json({ success: false, message: 'Mobile number already registered' });
-        }
+      const existing = await User.findOne({ mobileNumber });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'Mobile number already registered' });
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
@@ -109,21 +68,27 @@ router.post(
       const user = await User.create({
         corporation,
         fullName,
-        username: normalizedUsername,
-        mobileNumber: normalizedMobile || undefined,
+        mobileNumber,
         passwordHash
       });
 
       const token = signToken(user);
 
-      const populatedUser = await applyUserHierarchyPopulate(User.findById(user._id));
+      const populatedUser = await User.findById(user._id).populate('corporation', 'name code location hasRegions');
 
       return res.status(201).json({
         success: true,
         message: 'User registered successfully',
         data: {
           token,
-          user: userResponse(populatedUser)
+          user: {
+            id: populatedUser._id,
+            fullName: populatedUser.fullName,
+            userId: populatedUser.userId || '',
+            mobileNumber: populatedUser.mobileNumber,
+            corporation: populatedUser.corporation,
+            role: populatedUser.role || 'user'
+          }
         }
       });
     } catch (error) {
@@ -140,7 +105,11 @@ router.post(
 router.post(
   '/login',
   [
-    body('username').notEmpty().withMessage('Username is required'),
+    body('userId')
+      .notEmpty()
+      .withMessage('User ID is required')
+      .isLength({ min: 3, max: 30 })
+      .withMessage('User ID must be between 3 and 30 characters'),
     body('password').notEmpty().withMessage('Password is required')
   ],
   async (req, res) => {
@@ -154,9 +123,15 @@ router.post(
         });
       }
 
-      const { username, password } = req.body;
-      const normalizedUsername = String(username || '').trim().toLowerCase();
-      const user = await applyUserHierarchyPopulate(User.findOne({ username: normalizedUsername }));
+      const loginInput = String(req.body.userId || '').trim().toLowerCase();
+      const { password } = req.body;
+      const user = await User.findOne({
+        $or: [
+          { userId: loginInput },
+          // Backward compatibility: if older accounts still use mobile as login identifier.
+          { mobileNumber: loginInput }
+        ]
+      }).populate('corporation', 'name code location hasRegions');
 
       if (!user || !user.isActive) {
         return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -174,7 +149,14 @@ router.post(
         message: 'Login successful',
         data: {
           token,
-          user: userResponse(user)
+          user: {
+            id: user._id,
+            fullName: user.fullName,
+            userId: user.userId || '',
+            mobileNumber: user.mobileNumber,
+            corporation: user.corporation,
+            role: user.role || 'user'
+          }
         }
       });
     } catch (error) {
@@ -190,14 +172,21 @@ router.post(
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await applyUserHierarchyPopulate(User.findById(req.user.userId));
+    const user = await User.findById(req.user.userId).populate('corporation', 'name code location hasRegions');
     if (!user || !user.isActive) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     return res.json({
       success: true,
-      data: userResponse(user)
+      data: {
+        id: user._id,
+        fullName: user.fullName,
+        userId: user.userId || '',
+        mobileNumber: user.mobileNumber,
+        corporation: user.corporation,
+        role: user.role || 'user'
+      }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Error fetching profile', error: error.message });
@@ -209,14 +198,14 @@ const validateProfileUpdate = [
     .optional()
     .isLength({ min: 2 })
     .withMessage('Full name must be at least 2 characters'),
-  body('username')
+  body('userId')
     .optional()
-    .isLength({ min: 3 })
-    .withMessage('Username must be at least 3 characters')
-    .matches(/^[a-zA-Z0-9._-]+$/)
-    .withMessage('Username may contain letters, numbers, dot, underscore and hyphen only'),
+    .isLength({ min: 3, max: 30 })
+    .withMessage('User ID must be between 3 and 30 characters')
+    .matches(/^[a-z0-9._-]+$/)
+    .withMessage('User ID can contain only lowercase letters, numbers, dot, underscore, and hyphen'),
   body('mobileNumber')
-    .optional({ values: 'falsy' })
+    .optional()
     .matches(/^[6-9]\d{9}$/)
     .withMessage('Please enter a valid 10-digit Indian mobile number')
 ];
@@ -232,11 +221,9 @@ async function handleProfileUpdate(req, res) {
       });
     }
 
-    const { fullName, username, mobileNumber } = req.body;
-    const normalizedUsername = String(username || '').trim().toLowerCase();
-    const normalizedMobile = String(mobileNumber || '').trim();
+    const { fullName, userId, mobileNumber } = req.body;
 
-    if (typeof fullName === 'undefined' && typeof username === 'undefined' && typeof mobileNumber === 'undefined') {
+    if (typeof fullName === 'undefined' && typeof userId === 'undefined' && typeof mobileNumber === 'undefined') {
       return res.status(400).json({
         success: false,
         message: 'No profile fields provided for update'
@@ -248,40 +235,44 @@ async function handleProfileUpdate(req, res) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
-    if (typeof username !== 'undefined' && normalizedUsername !== user.username) {
-      const existingByUsername = await User.findOne({ username: normalizedUsername, _id: { $ne: user._id } });
-      if (existingByUsername) {
-        return res.status(409).json({ success: false, message: 'Username already registered' });
+    if (typeof mobileNumber !== 'undefined' && mobileNumber !== user.mobileNumber) {
+      const existing = await User.findOne({ mobileNumber, _id: { $ne: user._id } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'Mobile number already registered' });
       }
     }
 
-    if (typeof mobileNumber !== 'undefined') {
-      if (normalizedMobile && normalizedMobile !== user.mobileNumber) {
-        const existingByMobile = await User.findOne({ mobileNumber: normalizedMobile, _id: { $ne: user._id } });
-        if (existingByMobile) {
-          return res.status(409).json({ success: false, message: 'Mobile number already registered' });
-        }
+    if (typeof userId !== 'undefined') {
+      const normalizedUserId = String(userId).trim().toLowerCase();
+      const existing = await User.findOne({ userId: normalizedUserId, _id: { $ne: user._id } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'User ID already registered' });
       }
+      user.userId = normalizedUserId;
     }
 
     if (typeof fullName !== 'undefined') {
       user.fullName = String(fullName).trim();
     }
-    if (typeof username !== 'undefined') {
-      user.username = normalizedUsername;
-    }
     if (typeof mobileNumber !== 'undefined') {
-      user.mobileNumber = normalizedMobile || undefined;
+      user.mobileNumber = String(mobileNumber).trim();
     }
 
     await user.save();
 
-    const populatedUser = await applyUserHierarchyPopulate(User.findById(user._id));
+    const populatedUser = await User.findById(user._id).populate('corporation', 'name code location hasRegions');
 
     return res.json({
       success: true,
       message: 'Profile updated successfully',
-      data: userResponse(populatedUser)
+      data: {
+        id: populatedUser._id,
+        fullName: populatedUser.fullName,
+        userId: populatedUser.userId || '',
+        mobileNumber: populatedUser.mobileNumber,
+        corporation: populatedUser.corporation,
+        role: populatedUser.role || 'user'
+      }
     });
   } catch (error) {
     return res.status(500).json({

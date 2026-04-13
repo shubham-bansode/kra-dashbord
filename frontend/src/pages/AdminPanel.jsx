@@ -1773,7 +1773,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
   const [editingUser, setEditingUser] = useState(null);
   const [userForm, setUserForm] = useState({
     fullName: "",
-    username: "",
+    userId: "",
     mobileNumber: "",
     corporation: "",
     password: "",
@@ -1872,7 +1872,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
     setEditingUser(null);
     setUserForm({
       fullName: "",
-      username: "",
+      userId: "",
       mobileNumber: "",
       corporation: "",
       password: "",
@@ -1885,7 +1885,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
     setEditingUser(u);
     setUserForm({
       fullName: u?.fullName || "",
-      username: u?.username || "",
+      userId: u?.userId || "",
       mobileNumber: u?.mobileNumber || "",
       corporation: u?.corporation?._id || u?.corporation || "",
       password: "",
@@ -1905,12 +1905,17 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
 
     const payload = {
       fullName: userForm.fullName?.trim(),
-      username: userForm.username?.trim().toLowerCase(),
+      userId: userForm.userId?.trim().toLowerCase(),
       mobileNumber: userForm.mobileNumber?.trim(),
       corporation: userForm.corporation,
     };
 
-    if (!payload.fullName || !payload.username || !payload.corporation) {
+    if (
+      !payload.fullName ||
+      !payload.userId ||
+      !payload.mobileNumber ||
+      !payload.corporation
+    ) {
       setError(
         t("कृपया सर्व आवश्यक माहिती भरा", "Please fill all required fields"),
       );
@@ -1994,8 +1999,8 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
             <input
               type="text"
               placeholder={t(
-                "नाव, वापरकर्ता नाव किंवा मोबाईलने शोधा...",
-                "Search by name, username or mobile...",
+                "नाव, युजर आयडी किंवा मोबाईलने शोधा...",
+                "Search by name, user ID, or mobile...",
               )}
               value={search}
               onChange={(e) => {
@@ -2064,7 +2069,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                       User
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">
-                      Username
+                      User ID
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">
                       Mobile
@@ -2116,10 +2121,10 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-slate-600">
-                        @{u.username || "-"}
+                        {u.userId || "-"}
                       </td>
                       <td className="px-6 py-4 text-slate-600">
-                        {u.mobileNumber || "-"}
+                        {u.mobileNumber}
                       </td>
                       <td className="px-6 py-4">
                         <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-sm">
@@ -2278,8 +2283,8 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
               </h3>
               <p className="text-indigo-100 text-sm mt-1">
                 {t(
-                  "नाव, वापरकर्ता नाव आणि महामंडळ आवश्यक आहे.",
-                  "Name, username and corporation are required.",
+                  "नाव, युजर आयडी, मोबाईल आणि महामंडळ आवश्यक आहे.",
+                  "Name, user ID, mobile and corporation are required.",
                 )}
               </p>
             </div>
@@ -2301,25 +2306,25 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
 
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1">
-                  {t("वापरकर्ता नाव", "Username")} *
+                  {t("वापरकर्ता आयडी", "User ID")} *
                 </label>
                 <input
                   type="text"
-                  value={userForm.username}
+                  value={userForm.userId}
                   onChange={(e) =>
                     setUserForm((f) => ({
                       ...f,
-                      username: e.target.value,
+                      userId: e.target.value.toLowerCase().trim(),
                     }))
                   }
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                  placeholder="username"
+                  placeholder="user_01"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-1">
-                  {t("मोबाईल क्रमांक", "Mobile Number")}
+                  {t("मोबाईल क्रमांक", "Mobile Number")} *
                 </label>
                 <input
                   type="text"
@@ -2331,7 +2336,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                     }))
                   }
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                  placeholder="9XXXXXXXXX (optional)"
+                  placeholder="9XXXXXXXXX"
                 />
               </div>
 
