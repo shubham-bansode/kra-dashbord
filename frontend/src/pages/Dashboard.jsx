@@ -1514,37 +1514,42 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
-                {kraWiseData.length > 0 && (() => {
-                  const overallAverage =
-                    kraWiseData.reduce(
-                      (sum, kra) => sum + (Number(kra.achievementPercentage) || 0),
-                      0,
-                    ) / kraWiseData.length;
-                  const overallPct = Math.min(Number(overallAverage) || 0, 100);
+                {kraWiseData.length > 0 &&
+                  (() => {
+                    const overallAverage =
+                      kraWiseData.reduce(
+                        (sum, kra) =>
+                          sum + (Number(kra.achievementPercentage) || 0),
+                        0,
+                      ) / kraWiseData.length;
+                    const overallPct = Math.min(
+                      Number(overallAverage) || 0,
+                      100,
+                    );
 
-                  return (
-                    <div className="pt-3 mt-2 border-t border-slate-200">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
-                          {t("एकूण साध्य", "Overall Achivments")}
-                        </span>
-                        <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
-                          {overallAverage.toFixed(1)}%
-                        </span>
+                    return (
+                      <div className="pt-3 mt-2 border-t border-slate-200">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
+                            {t("एकूण साध्य", "Overall Achivments")}
+                          </span>
+                          <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
+                            {overallAverage.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-500 rounded-full transition-all duration-700 ease-out"
+                            style={{ width: `${overallPct}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
+                          <span>{t("सरासरी %", "Average %")}</span>
+                          <span>{t("सर्व KRA", "All KRAs")}</span>
+                        </div>
                       </div>
-                      <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-500 rounded-full transition-all duration-700 ease-out"
-                          style={{ width: `${overallPct}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
-                        <span>{t("सरासरी %", "Average %")}</span>
-                        <span>{t("सर्व KRA", "All KRAs")}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
                 {kraWiseData.length === 0 && (
                   <p className="text-center text-slate-400 text-sm py-8">
                     {t("डेटा उपलब्ध नाही", "No data available")}
