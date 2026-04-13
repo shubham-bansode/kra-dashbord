@@ -22,6 +22,7 @@ function signToken(user) {
   return jwt.sign(
     {
       userId: user._id,
+      loginId: user.userId || user.mobileNumber,
       mobileNumber: user.mobileNumber,
       role: user.role || 'user'
     },
@@ -83,6 +84,7 @@ router.post(
           user: {
             id: populatedUser._id,
             fullName: populatedUser.fullName,
+            userId: populatedUser.userId || '',
             mobileNumber: populatedUser.mobileNumber,
             corporation: populatedUser.corporation,
             role: populatedUser.role || 'user'
@@ -103,7 +105,11 @@ router.post(
 router.post(
   '/login',
   [
-    body('mobileNumber').notEmpty().withMessage('Mobile number is required').matches(/^[6-9]\d{9}$/).withMessage('Please enter a valid 10-digit Indian mobile number'),
+    body('userId')
+      .notEmpty()
+      .withMessage('User ID is required')
+      .isLength({ min: 3, max: 30 })
+      .withMessage('User ID must be between 3 and 30 characters'),
     body('password').notEmpty().withMessage('Password is required')
   ],
   async (req, res) => {
@@ -117,8 +123,15 @@ router.post(
         });
       }
 
-      const { mobileNumber, password } = req.body;
-      const user = await User.findOne({ mobileNumber }).populate('corporation', 'name code location hasRegions');
+      const loginInput = String(req.body.userId || '').trim().toLowerCase();
+      const { password } = req.body;
+      const user = await User.findOne({
+        $or: [
+          { userId: loginInput },
+          // Backward compatibility: if older accounts still use mobile as login identifier.
+          { mobileNumber: loginInput }
+        ]
+      }).populate('corporation', 'name code location hasRegions');
 
       if (!user || !user.isActive) {
         return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -139,6 +152,7 @@ router.post(
           user: {
             id: user._id,
             fullName: user.fullName,
+            userId: user.userId || '',
             mobileNumber: user.mobileNumber,
             corporation: user.corporation,
             role: user.role || 'user'
@@ -168,6 +182,7 @@ router.get('/me', auth, async (req, res) => {
       data: {
         id: user._id,
         fullName: user.fullName,
+        userId: user.userId || '',
         mobileNumber: user.mobileNumber,
         corporation: user.corporation,
         role: user.role || 'user'
@@ -183,6 +198,12 @@ const validateProfileUpdate = [
     .optional()
     .isLength({ min: 2 })
     .withMessage('Full name must be at least 2 characters'),
+  body('userId')
+    .optional()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('User ID must be between 3 and 30 characters')
+    .matches(/^[a-z0-9._-]+$/)
+    .withMessage('User ID can contain only lowercase letters, numbers, dot, underscore, and hyphen'),
   body('mobileNumber')
     .optional()
     .matches(/^[6-9]\d{9}$/)
@@ -200,9 +221,9 @@ async function handleProfileUpdate(req, res) {
       });
     }
 
-    const { fullName, mobileNumber } = req.body;
+    const { fullName, userId, mobileNumber } = req.body;
 
-    if (typeof fullName === 'undefined' && typeof mobileNumber === 'undefined') {
+    if (typeof fullName === 'undefined' && typeof userId === 'undefined' && typeof mobileNumber === 'undefined') {
       return res.status(400).json({
         success: false,
         message: 'No profile fields provided for update'
@@ -219,6 +240,15 @@ async function handleProfileUpdate(req, res) {
       if (existing) {
         return res.status(409).json({ success: false, message: 'Mobile number already registered' });
       }
+    }
+
+    if (typeof userId !== 'undefined') {
+      const normalizedUserId = String(userId).trim().toLowerCase();
+      const existing = await User.findOne({ userId: normalizedUserId, _id: { $ne: user._id } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'User ID already registered' });
+      }
+      user.userId = normalizedUserId;
     }
 
     if (typeof fullName !== 'undefined') {
@@ -238,6 +268,7 @@ async function handleProfileUpdate(req, res) {
       data: {
         id: populatedUser._id,
         fullName: populatedUser.fullName,
+        userId: populatedUser.userId || '',
         mobileNumber: populatedUser.mobileNumber,
         corporation: populatedUser.corporation,
         role: populatedUser.role || 'user'

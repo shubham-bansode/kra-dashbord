@@ -12,6 +12,20 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Full name is required'],
       trim: true
     },
+    userId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      lowercase: true,
+      validate: {
+        validator: function (v) {
+          if (v == null || v === '') return true;
+          return /^[a-z0-9._-]{3,30}$/.test(v);
+        },
+        message: 'User ID must be 3-30 characters and contain only lowercase letters, numbers, dot, underscore, or hyphen'
+      }
+    },
     mobileNumber: {
       type: String,
       required: [true, 'Mobile number is required'],

@@ -50,8 +50,8 @@ export function AuthProvider({ children }) {
     saveAuth("", null);
   };
 
-  const login = async ({ mobileNumber, password }) => {
-    const res = await authApi.login({ mobileNumber, password });
+  const login = async ({ userId, password }) => {
+    const res = await authApi.login({ userId, password });
     const nextToken = res.data?.data?.token;
     const nextUser = res.data?.data?.user;
     saveAuth(nextToken, nextUser);

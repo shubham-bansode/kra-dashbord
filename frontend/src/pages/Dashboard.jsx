@@ -1091,13 +1091,13 @@ export default function Dashboard() {
                     dataKey="name"
                     interval={0}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <YAxis
                     domain={[0, yDomainMax]}
                     tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <Tooltip
@@ -1200,13 +1200,13 @@ export default function Dashboard() {
                     dataKey="name"
                     interval={0}
                     tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <YAxis
                     domain={[0, yDomainMax]}
                     tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={false}
+                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                     tickLine={false}
                   />
                   <Tooltip
@@ -1290,7 +1290,7 @@ export default function Dashboard() {
                   type="category"
                   dataKey="label"
                   tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                  axisLine={false}
+                  axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                   tickLine={false}
                 />
                 <YAxis
@@ -1298,7 +1298,7 @@ export default function Dashboard() {
                   domain={[0, 100]}
                   tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
                   tick={{ fill: "#94a3b8", fontSize: 11 }}
-                  axisLine={false}
+                  axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                   tickLine={false}
                 />
                 <Tooltip

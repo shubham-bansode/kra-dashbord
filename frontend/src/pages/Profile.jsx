@@ -9,6 +9,7 @@ export default function Profile() {
 
   const [formData, setFormData] = useState({
     fullName: "",
+    userId: "",
     mobileNumber: "",
   });
   const [errors, setErrors] = useState({});
@@ -27,6 +28,7 @@ export default function Profile() {
   useEffect(() => {
     setFormData({
       fullName: user?.fullName || "",
+      userId: user?.userId || "",
       mobileNumber: user?.mobileNumber || "",
     });
   }, [user]);
@@ -34,6 +36,8 @@ export default function Profile() {
   const hasChanges = useMemo(() => {
     return (
       (formData.fullName || "").trim() !== (user?.fullName || "").trim() ||
+      (formData.userId || "").trim().toLowerCase() !==
+        (user?.userId || "").trim().toLowerCase() ||
       (formData.mobileNumber || "").trim() !== (user?.mobileNumber || "").trim()
     );
   }, [formData, user]);
@@ -47,6 +51,13 @@ export default function Profile() {
       nextErrors.fullName = t(
         "पूर्ण नाव किमान 2 अक्षरांचे असावे",
         "Full name must be at least 2 characters",
+      );
+    }
+
+    if (!/^[a-z0-9._-]{3,30}$/.test(String(formData.userId || "").trim())) {
+      nextErrors.userId = t(
+        "युजर आयडी 3-30 अक्षरांचा व लहान इंग्रजी अक्षरे/अंक/._- असावा",
+        "User ID must be 3-30 chars and use lowercase letters, numbers, . _ -",
       );
     }
 
@@ -78,6 +89,9 @@ export default function Profile() {
       setIsSubmitting(true);
       const res = await authApi.updateProfile({
         fullName: String(formData.fullName || "").trim(),
+        userId: String(formData.userId || "")
+          .trim()
+          .toLowerCase(),
         mobileNumber: String(formData.mobileNumber || "").trim(),
       });
       updateLocalUser(res?.data?.data || null);
@@ -249,6 +263,27 @@ export default function Profile() {
             />
             {errors.fullName && (
               <p className="text-xs text-red-600 mt-1">{errors.fullName}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
+              {t("वापरकर्ता आयडी", "User ID")}
+            </label>
+            <input
+              type="text"
+              value={formData.userId}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  userId: e.target.value.toLowerCase().trim(),
+                }))
+              }
+              className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 ${errors.userId ? "border-red-400" : "border-slate-300"}`}
+              placeholder={t("उदा. user_01", "e.g. user_01")}
+            />
+            {errors.userId && (
+              <p className="text-xs text-red-600 mt-1">{errors.userId}</p>
             )}
           </div>
 
