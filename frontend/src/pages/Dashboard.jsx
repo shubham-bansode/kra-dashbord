@@ -190,6 +190,100 @@ const normalizeKraRows = (rows = []) =>
     totalTarget: toSafeNumber(row?.totalTarget),
   }));
 
+const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
+  const usedLeftY = [];
+  const usedRightY = [];
+  const placements = new Map();
+
+  const getPlacement = (props) => {
+    const index = Number(props?.index);
+    if (placements.has(index)) return placements.get(index);
+
+    const value = Number(
+      props?.slicePercentage ?? Number(props?.percent || 0) * 100,
+    );
+    const cx = Number(props?.cx);
+    const cy = Number(props?.cy);
+    const outerRadius = Number(props?.outerRadius || 90);
+    const midAngle = Number(props?.midAngle || 0);
+
+    if (
+      !Number.isFinite(value) ||
+      !Number.isFinite(cx) ||
+      !Number.isFinite(cy)
+    ) {
+      return null;
+    }
+
+    const rad = (-midAngle * Math.PI) / 180;
+    const rightSide = Math.cos(rad) >= 0;
+    const rawY = cy + Math.sin(rad) * (outerRadius + 24);
+    const labelX = cx + (rightSide ? outerRadius + 42 : -(outerRadius + 42));
+    const topClamp = Math.max(12, cy - 125);
+    const bottomClamp = cy + 125;
+
+    const used = rightSide ? usedRightY : usedLeftY;
+    let adjustedY = rawY;
+    for (const prevY of used.sort((a, b) => a - b)) {
+      if (Math.abs(adjustedY - prevY) < minGap) {
+        adjustedY = prevY + minGap;
+      }
+    }
+    adjustedY = Math.max(topClamp, Math.min(bottomClamp, adjustedY));
+    used.push(adjustedY);
+
+    const placement = {
+      value,
+      cx,
+      cy,
+      rightSide,
+      textX: labelX,
+      textY: adjustedY,
+      anchorX: cx + Math.cos(rad) * (outerRadius + 8),
+      anchorY: cy + Math.sin(rad) * (outerRadius + 8),
+      bendX: cx + (rightSide ? outerRadius + 24 : -(outerRadius + 24)),
+    };
+
+    placements.set(index, placement);
+    return placement;
+  };
+
+  return {
+    label: (props) => {
+      const placement = getPlacement(props);
+      if (!placement) return null;
+
+      return (
+        <text
+          x={placement.textX}
+          y={placement.textY}
+          fill="#0f172a"
+          fontSize={12}
+          fontWeight={700}
+          textAnchor={placement.rightSide ? "start" : "end"}
+          dominantBaseline="central"
+        >
+          {`${placement.value.toFixed(1)}%`}
+        </text>
+      );
+    },
+    labelLine: (props) => {
+      const placement = getPlacement(props);
+      if (!placement) return null;
+
+      const endX = placement.textX + (placement.rightSide ? -5 : 5);
+      return (
+        <path
+          d={`M ${placement.anchorX} ${placement.anchorY} L ${placement.bendX} ${placement.textY} L ${endX} ${placement.textY}`}
+          fill="none"
+          stroke="#94a3b8"
+          strokeWidth={1}
+        />
+      );
+    },
+  };
+};
+
 const ChartEmptyState = ({ title }) => (
   <div className="h-[300px] rounded-xl border border-dashed border-slate-200 bg-slate-50/80 flex items-center justify-center">
     <div className="text-center px-6">
@@ -1815,6 +1909,7 @@ export default function Dashboard() {
               </div>
             ) : (
               corpKraPies.map((corp, corpIdx) => {
+                const corpPieLabel = createNonOverlappingPieLabel();
                 const borderColors = [
                   "border-indigo-200",
                   "border-violet-200",
@@ -1856,10 +1951,8 @@ export default function Dashboard() {
                           outerRadius={90}
                           paddingAngle={2}
                           stroke="none"
-                          label={({ slicePercentage }) =>
-                            `${Number(slicePercentage || 0).toFixed(1)}%`
-                          }
-                          labelLine={{ stroke: "#94a3b8", strokeWidth: 1 }}
+                          label={corpPieLabel.label}
+                          labelLine={corpPieLabel.labelLine}
                         >
                           {(corp.data || []).map((slice, index) => (
                             <Cell
