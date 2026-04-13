@@ -136,13 +136,29 @@ router.post(
         ]
       }).populate('corporation', 'name code location hasRegions');
 
-      if (!user || !user.isActive) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          code: 'USER_ID_NOT_FOUND',
+          message: 'User ID not found'
+        });
+      }
+
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_INACTIVE',
+          message: 'Account is inactive. Please contact administrator'
+        });
       }
 
       const ok = await bcrypt.compare(password, user.passwordHash);
       if (!ok) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        return res.status(401).json({
+          success: false,
+          code: 'INCORRECT_PASSWORD',
+          message: 'Incorrect password'
+        });
       }
 
       const token = signToken(user);

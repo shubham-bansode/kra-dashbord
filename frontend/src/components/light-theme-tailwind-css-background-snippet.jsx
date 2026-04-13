@@ -36,7 +36,10 @@ export const RadialBackground = () => {
   }, [imageLayers.length]);
 
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+    <div
+      className="fixed inset-0 -z-10 overflow-hidden bg-slate-900"
+      aria-hidden="true"
+    >
       {imageLayers.map((src, index) => (
         <div
           key={src}
@@ -46,13 +49,10 @@ export const RadialBackground = () => {
           style={{
             backgroundImage: `url("${src}")`,
             transitionDuration: "2200ms",
+            filter: "saturate(1.08) contrast(1.06)",
           }}
         />
       ))}
-
-      {/* Contrast overlays keep forms and data readable under HCI accessibility guidelines. */}
-      <div className="absolute inset-0 bg-white/72" />
-      <div className="absolute inset-0 bg-gradient-to-b from-sky-100/45 via-white/35 to-slate-100/55" />
     </div>
   );
 };

@@ -91,7 +91,7 @@ const HomePage = () => {
             <button
               type="button"
               onClick={() => handleCardClick(token ? "/dashboard" : "/auth")}
-              className="px-8 py-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg shadow-lg transition-all transform hover:scale-105"
+              className="px-8 py-4 rounded-lg font-semibold text-lg shadow-lg transition-all transform hover:scale-105 bg-white/10 border border-white/70 backdrop-blur-sm text-black hover:bg-white/20"
             >
               {token
                 ? t("डॅशबोर्ड उघडा →", "Open Dashboard →")

@@ -62,8 +62,8 @@ const GlobalHeader = () => {
               onClick={() => navigate("/")}
             >
               <img
-                src="/images/महाराष्ट्र शासन.png"
-                alt="महाराष्ट्र शासन"
+                src="/images/जलसंपदा विभाग.png"
+                alt="जलसंपदा विभाग"
                 className="w-9 h-9 object-contain bg-white rounded-full p-0.5"
               />
               <div className="hidden sm:block">
