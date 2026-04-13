@@ -159,7 +159,7 @@ export default function Monitoring() {
     kraYear: "",
     kra: "",
   });
-  const [activeSection, setActiveSection] = useState("summary");
+  const [activeSection, setActiveSection] = useState("entries");
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const [summary, setSummary] = useState(null);
@@ -285,7 +285,17 @@ export default function Monitoring() {
         );
       });
 
-      setMyEntries(isPrivilegedUser ? allEntries : mine);
+      const selectedKraId = Number(filters.kra);
+      const applyStrictKraFilter = (entries) => {
+        if (!Number.isFinite(selectedKraId) || selectedKraId <= 0) {
+          return entries;
+        }
+        return entries.filter((entry) =>
+          getSelectedKraIds(entry).includes(selectedKraId),
+        );
+      };
+
+      setMyEntries(applyStrictKraFilter(isPrivilegedUser ? allEntries : mine));
       setEntriesLastRefresh(new Date());
     } catch (e) {
       setEntriesError(
@@ -495,16 +505,6 @@ export default function Monitoring() {
           <div className="px-6 py-5">
             <div className="mb-4 inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
               <button
-                onClick={() => setActiveSection("summary")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  activeSection === "summary"
-                    ? "bg-white text-indigo-700 shadow"
-                    : "text-slate-600 hover:text-slate-800"
-                }`}
-              >
-                {t("📊 अहवाल सारांश", "📊 Report Summary")}
-              </button>
-              <button
                 onClick={() => setActiveSection("entries")}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
                   activeSection === "entries"
@@ -513,6 +513,16 @@ export default function Monitoring() {
                 }`}
               >
                 {t("📝 सर्व नोंदी", "📝 All Entries")}
+              </button>
+              <button
+                onClick={() => setActiveSection("summary")}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  activeSection === "summary"
+                    ? "bg-white text-indigo-700 shadow"
+                    : "text-slate-600 hover:text-slate-800"
+                }`}
+              >
+                {t("📊 अहवाल सारांश", "📊 Report Summary")}
               </button>
             </div>
 
