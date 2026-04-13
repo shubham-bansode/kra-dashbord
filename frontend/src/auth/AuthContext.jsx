@@ -51,7 +51,15 @@ export function AuthProvider({ children }) {
   };
 
   const login = async ({ userId, password }) => {
-    const res = await authApi.login({ userId, password });
+    const normalizedUserId = String(userId || "")
+      .trim()
+      .toLowerCase();
+    const res = await authApi.login({
+      userId: normalizedUserId,
+      // Backward compatibility for servers still validating mobileNumber on /auth/login.
+      mobileNumber: normalizedUserId,
+      password,
+    });
     const nextToken = res.data?.data?.token;
     const nextUser = res.data?.data?.user;
     saveAuth(nextToken, nextUser);

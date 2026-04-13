@@ -68,6 +68,8 @@ router.post(
       const user = await User.create({
         corporation,
         fullName,
+        userId: String(mobileNumber).trim(),
+        username: String(mobileNumber).trim(),
         mobileNumber,
         passwordHash
       });
@@ -84,7 +86,7 @@ router.post(
           user: {
             id: populatedUser._id,
             fullName: populatedUser.fullName,
-            userId: populatedUser.userId || '',
+            userId: populatedUser.userId || populatedUser.username || populatedUser.mobileNumber || '',
             mobileNumber: populatedUser.mobileNumber,
             corporation: populatedUser.corporation,
             role: populatedUser.role || 'user'
@@ -128,6 +130,7 @@ router.post(
       const user = await User.findOne({
         $or: [
           { userId: loginInput },
+          { username: loginInput },
           // Backward compatibility: if older accounts still use mobile as login identifier.
           { mobileNumber: loginInput }
         ]
@@ -152,7 +155,7 @@ router.post(
           user: {
             id: user._id,
             fullName: user.fullName,
-            userId: user.userId || '',
+            userId: user.userId || user.username || user.mobileNumber || '',
             mobileNumber: user.mobileNumber,
             corporation: user.corporation,
             role: user.role || 'user'
@@ -182,7 +185,7 @@ router.get('/me', auth, async (req, res) => {
       data: {
         id: user._id,
         fullName: user.fullName,
-        userId: user.userId || '',
+        userId: user.userId || user.username || user.mobileNumber || '',
         mobileNumber: user.mobileNumber,
         corporation: user.corporation,
         role: user.role || 'user'
@@ -244,11 +247,15 @@ async function handleProfileUpdate(req, res) {
 
     if (typeof userId !== 'undefined') {
       const normalizedUserId = String(userId).trim().toLowerCase();
-      const existing = await User.findOne({ userId: normalizedUserId, _id: { $ne: user._id } });
+      const existing = await User.findOne({
+        _id: { $ne: user._id },
+        $or: [{ userId: normalizedUserId }, { username: normalizedUserId }],
+      });
       if (existing) {
         return res.status(409).json({ success: false, message: 'User ID already registered' });
       }
       user.userId = normalizedUserId;
+      user.username = normalizedUserId;
     }
 
     if (typeof fullName !== 'undefined') {
@@ -268,7 +275,7 @@ async function handleProfileUpdate(req, res) {
       data: {
         id: populatedUser._id,
         fullName: populatedUser.fullName,
-        userId: populatedUser.userId || '',
+        userId: populatedUser.userId || populatedUser.username || populatedUser.mobileNumber || '',
         mobileNumber: populatedUser.mobileNumber,
         corporation: populatedUser.corporation,
         role: populatedUser.role || 'user'

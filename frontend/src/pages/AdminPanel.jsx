@@ -1885,7 +1885,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
     setEditingUser(u);
     setUserForm({
       fullName: u?.fullName || "",
-      userId: u?.userId || "",
+      userId: u?.userId || u?.username || u?.mobileNumber || "",
       mobileNumber: u?.mobileNumber || "",
       corporation: u?.corporation?._id || u?.corporation || "",
       password: "",
@@ -2121,7 +2121,7 @@ function UsersSection({ isSuperAdmin, setError, setSuccess }) {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-slate-600">
-                        {u.userId || "-"}
+                        {u.userId || u.username || u.mobileNumber || "-"}
                       </td>
                       <td className="px-6 py-4 text-slate-600">
                         {u.mobileNumber}

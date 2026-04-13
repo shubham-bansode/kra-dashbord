@@ -26,6 +26,14 @@ const userSchema = new mongoose.Schema(
         message: 'User ID must be 3-30 characters and contain only lowercase letters, numbers, dot, underscore, or hyphen'
       }
     },
+    // Backward compatibility: legacy data and DB index may still use username.
+    username: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      lowercase: true,
+    },
     mobileNumber: {
       type: String,
       required: [true, 'Mobile number is required'],

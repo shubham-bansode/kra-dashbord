@@ -777,10 +777,18 @@ router.get('/users',
         User.countDocuments(filter)
       ]);
 
+      const usersWithFallbackUserId = users.map((userDoc) => {
+        const user = userDoc.toObject();
+        if (!user.userId) {
+          user.userId = user.username || user.mobileNumber || '';
+        }
+        return user;
+      });
+
       res.json({
         success: true,
         data: {
-          users,
+          users: usersWithFallbackUserId,
           pagination: {
             total,
             page: parseInt(page),
@@ -1007,6 +1015,7 @@ router.post(
         corporation: targetCorporation,
         fullName,
         userId: normalizedUserId,
+        username: normalizedUserId,
         mobileNumber,
         passwordHash,
         role: role || 'user'
@@ -1087,7 +1096,11 @@ router.put(
       }
 
       if (typeof req.body.fullName === 'string') updates.fullName = req.body.fullName;
-      if (typeof req.body.userId === 'string') updates.userId = req.body.userId.trim().toLowerCase();
+      if (typeof req.body.userId === 'string') {
+        const normalizedUserId = req.body.userId.trim().toLowerCase();
+        updates.userId = normalizedUserId;
+        updates.username = normalizedUserId;
+      }
       if (typeof req.body.mobileNumber === 'string') updates.mobileNumber = req.body.mobileNumber;
       if (typeof req.body.corporation === 'string') updates.corporation = req.body.corporation;
 
@@ -1106,7 +1119,10 @@ router.put(
       }
 
       if (updates.userId) {
-        const existing = await User.findOne({ userId: updates.userId, _id: { $ne: id } });
+        const existing = await User.findOne({
+          _id: { $ne: id },
+          $or: [{ userId: updates.userId }, { username: updates.userId }]
+        });
         if (existing) {
           return res.status(409).json({
             success: false,

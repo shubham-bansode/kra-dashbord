@@ -97,13 +97,6 @@ const HomePage = () => {
                 ? t("डॅशबोर्ड उघडा →", "Open Dashboard →")
                 : t("लॉगिन करा →", "Login →")}
             </button>
-            <button
-              type="button"
-              onClick={() => handleCardClick("/report")}
-              className="px-8 py-4 rounded-lg bg-white hover:bg-gray-50 text-blue-600 font-semibold text-lg border-2 border-blue-600 transition-all transform hover:scale-105"
-            >
-              {t("अहवाल पहा →", "View Report →")}
-            </button>
           </div>
         </div>
       </section>
