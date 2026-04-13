@@ -364,6 +364,409 @@ function percentageProject({ achievementField, targetField }) {
   };
 }
 
+function normalizeComparativeMetric(rawMetric) {
+      const metric = String(rawMetric || '').trim().toLowerCase();
+      const supported = new Set([
+        'completionpercentage',
+        'totalachievement',
+        'totalentries',
+        'efficiencyscore',
+        'totaltarget'
+      ]);
+      if (supported.has(metric)) return metric;
+      return 'completionpercentage';
+}
+
+    function normalizeTimeRange(rawRange) {
+      const value = String(rawRange || '').trim().toLowerCase();
+      if (value === 'quarter') return 'quarter';
+      if (value === 'year') return 'year';
+      return 'month';
+    }
+
+    function toYearMonthLabel(year, month) {
+      if (!year || !month) return '';
+      return `${String(month).padStart(2, '0')}/${year}`;
+    }
+
+    function quarterForMonth(month) {
+      const m = Number(month || 1);
+      if (m >= 1 && m <= 3) return 1;
+      if (m >= 4 && m <= 6) return 2;
+      if (m >= 7 && m <= 9) return 3;
+      return 4;
+    }
+
+    function quarterBounds(year, quarter) {
+      const q = Number(quarter || 1);
+      const startMonth = q === 1 ? 1 : q === 2 ? 4 : q === 3 ? 7 : 10;
+      return {
+        year,
+        quarter: q,
+        startMonth,
+        endMonth: startMonth + 2
+      };
+    }
+
+    function previousQuarterBounds(year, quarter) {
+      if (quarter > 1) return quarterBounds(year, quarter - 1);
+      return quarterBounds(year - 1, 4);
+    }
+
+    function comparativeMetricValue(row, metric) {
+      const completion = Number(row?.completionPercentage || 0);
+      const achievement = Number(row?.totalAchievement || 0);
+      const entries = Number(row?.totalEntries || 0);
+      const efficiency = Number(row?.efficiencyScore || 0);
+      const target = Number(row?.totalTarget || 0);
+
+      if (metric === 'totalachievement') return achievement;
+      if (metric === 'totalentries') return entries;
+      if (metric === 'efficiencyscore') return efficiency;
+      if (metric === 'totaltarget') return target;
+      return completion;
+    }
+
+    function buildComparativeRange({
+      baseMatch,
+      anchor,
+      timeRange,
+      hasExplicitPeriod = false
+    }) {
+      const range = normalizeTimeRange(timeRange);
+
+      if (!anchor?.year || !anchor?.month) {
+        return {
+          currentMatch: baseMatch,
+          previousMatch: baseMatch,
+          currentLabel: '',
+          previousLabel: ''
+        };
+      }
+
+      if (range === 'year') {
+        if (!hasExplicitPeriod) {
+          return {
+            currentMatch: { ...baseMatch },
+            previousMatch: null,
+            currentLabel: 'All Years',
+            previousLabel: ''
+          };
+        }
+
+        const currentYear = Number(anchor.year);
+        const previousYear = currentYear - 1;
+        return {
+          currentMatch: { ...baseMatch, achievementYear: currentYear },
+          previousMatch: { ...baseMatch, achievementYear: previousYear },
+          currentLabel: String(currentYear),
+          previousLabel: String(previousYear)
+        };
+      }
+
+      if (range === 'quarter') {
+        const q = quarterForMonth(anchor.month);
+        const currentQuarter = quarterBounds(anchor.year, q);
+        const previousQuarter = previousQuarterBounds(currentQuarter.year, currentQuarter.quarter);
+
+        const currentMonths = [currentQuarter.startMonth, currentQuarter.startMonth + 1, currentQuarter.endMonth];
+        const previousMonths = [previousQuarter.startMonth, previousQuarter.startMonth + 1, previousQuarter.endMonth];
+
+        return {
+          currentMatch: {
+            ...baseMatch,
+            achievementYear: currentQuarter.year,
+            achievementMonth: { $in: currentMonths }
+          },
+          previousMatch: {
+            ...baseMatch,
+            achievementYear: previousQuarter.year,
+            achievementMonth: { $in: previousMonths }
+          },
+          currentLabel: `Q${currentQuarter.quarter} ${currentQuarter.year}`,
+          previousLabel: `Q${previousQuarter.quarter} ${previousQuarter.year}`
+        };
+      }
+
+      const prev = previousPeriod(anchor);
+      return {
+        currentMatch: {
+          ...baseMatch,
+          achievementYear: anchor.year,
+          achievementMonth: anchor.month
+        },
+        previousMatch: prev
+          ? {
+              ...baseMatch,
+              achievementYear: prev.year,
+              achievementMonth: prev.month
+            }
+          : baseMatch,
+        currentLabel: toYearMonthLabel(anchor.year, anchor.month),
+        previousLabel: prev ? toYearMonthLabel(prev.year, prev.month) : ''
+      };
+    }
+
+    async function aggregateComparativeRows({ match, grouping, kraId }) {
+      const rawRows = await KraMonthlyEntry.aggregate([
+        { $match: match },
+        ...getEntityPresenceMatchStage(grouping),
+        ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
+        {
+          $addFields: {
+            _rowEfficiency: {
+              $cond: {
+                if: { $gt: [targetExpr(), 0] },
+                then: {
+                  $multiply: [
+                    { $divide: [achievementExpr(), targetExpr()] },
+                    { $ifNull: ['$kras.weight', 0] },
+                    100
+                  ]
+                },
+                else: 0
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: grouping.idField,
+            snapshotName: { $first: `$${grouping.snapshotNameField}` },
+            totalAchievement: { $sum: achievementExpr() },
+            totalTarget: { $sum: targetExpr() },
+            weightedScore: { $sum: '$_rowEfficiency' },
+            totalWeight: { $sum: { $ifNull: ['$kras.weight', 0] } },
+            submissionIds: { $addToSet: '$_id' }
+          }
+        },
+        { $match: { _id: { $ne: null } } },
+        {
+          $addFields: {
+            completionPercentage: percentageProject({
+              achievementField: '$totalAchievement',
+              targetField: '$totalTarget'
+            }),
+            efficiencyScore: {
+              $cond: {
+                if: { $gt: ['$totalWeight', 0] },
+                then: { $round: [{ $divide: ['$weightedScore', '$totalWeight'] }, 2] },
+                else: 0
+              }
+            }
+          }
+        },
+        { $lookup: grouping.lookup },
+        {
+          $project: {
+            _id: 1,
+            name: entityNameProjection(grouping),
+            totalAchievement: { $round: ['$totalAchievement', 2] },
+            totalTarget: { $round: ['$totalTarget', 2] },
+            totalEntries: { $size: '$submissionIds' },
+            completionPercentage: 1,
+            efficiencyScore: 1
+          }
+        }
+      ]);
+
+      const scopedEntities = await getScopedEntitiesForGrouping(grouping, match);
+      if (!Array.isArray(scopedEntities) || scopedEntities.length === 0) {
+        return rawRows;
+      }
+
+      const byId = new Map(
+        (Array.isArray(rawRows) ? rawRows : []).map((row) => [String(row?._id || ''), row])
+      );
+
+      return scopedEntities
+        .map((entity) => {
+          const id = String(entity?._id || '');
+          if (!id) return null;
+          const existing = byId.get(id);
+          if (existing) {
+            return {
+              ...existing,
+              _id: entity._id,
+              name: String(existing?.name || '').trim() || String(entity?.name || '').trim() || 'Unknown'
+            };
+          }
+
+          return {
+            _id: entity._id,
+            name: String(entity?.name || '').trim() || 'Unknown',
+            totalAchievement: 0,
+            totalTarget: 0,
+            totalEntries: 0,
+            completionPercentage: 0,
+            efficiencyScore: 0
+          };
+        })
+        .filter(Boolean);
+    }
+
+    // GET comparative analysis data for leaderboard insights
+    router.get('/comparative-analysis', async (req, res) => {
+      try {
+        const baseMatch = buildBaseMatch(req.query);
+        const kraId = await resolveKraIdParam(req.query.kra);
+
+        const level = String(req.query.level || req.query.groupBy || 'corporation').toLowerCase();
+        const grouping = getGrouping({ groupBy: level });
+        const metric = normalizeComparativeMetric(req.query.metric);
+        const timeRange = normalizeTimeRange(req.query.timeRange);
+
+        const topN = Math.min(Math.max(toInt(req.query.topN) || 5, 1), 50);
+        const page = Math.max(toInt(req.query.page) || 1, 1);
+        const perPage = Math.min(Math.max(toInt(req.query.limit) || topN, 1), 100);
+
+        const hasExplicitPeriod =
+          Number.isFinite(toInt(req.query.month)) &&
+          Number.isFinite(toInt(req.query.year));
+
+        const anchor = await resolveEffectivePeriod({
+          baseMatch,
+          month: req.query.month,
+          year: req.query.year,
+          preferLatest: true
+        });
+
+        if (!anchor) {
+          return res.json({
+            success: true,
+            data: {
+              level: grouping.groupBy,
+              metric,
+              timeRange,
+              period: null,
+              topPerformers: [],
+              leaderboard: [],
+              totalCount: 0,
+              risingPerformer: null,
+              needsAttention: null
+            }
+          });
+        }
+
+        const range = buildComparativeRange({
+          baseMatch,
+          anchor,
+          timeRange,
+          hasExplicitPeriod
+        });
+
+        const [currentRowsRaw, previousRowsRaw] = await Promise.all([
+          aggregateComparativeRows({
+            match: range.currentMatch,
+            grouping,
+            kraId
+          }),
+          range.previousMatch
+            ? aggregateComparativeRows({
+                match: range.previousMatch,
+                grouping,
+                kraId
+              })
+            : Promise.resolve([])
+        ]);
+
+        const currentRows = await backfillCorporationNamesFromDivisionSnapshots(currentRowsRaw, grouping);
+        const previousRows = await backfillCorporationNamesFromDivisionSnapshots(previousRowsRaw, grouping);
+
+        const prevById = new Map(
+          previousRows.map((row) => [String(row?._id || ''), comparativeMetricValue(row, metric)])
+        );
+
+        const prevRankMap = new Map(
+          [...previousRows]
+            .sort((a, b) => {
+              const aVal = comparativeMetricValue(a, metric);
+              const bVal = comparativeMetricValue(b, metric);
+              if (bVal !== aVal) return bVal - aVal;
+              return String(a?.name || '').localeCompare(String(b?.name || ''));
+            })
+            .map((row, idx) => [String(row?._id || ''), idx + 1])
+        );
+
+        const rankedRows = [...currentRows]
+          .map((row) => {
+            const entityId = String(row?._id || '');
+            const metricValue = comparativeMetricValue(row, metric);
+            const previousMetricValue = Number(prevById.get(entityId) || 0);
+            return {
+              entityId,
+              name: String(row?.name || 'Unknown'),
+              totalAchievement: Number(row?.totalAchievement || 0),
+              totalTarget: Number(row?.totalTarget || 0),
+              totalEntries: Number(row?.totalEntries || 0),
+              completionPercentage: Number(row?.completionPercentage || 0),
+              efficiencyScore: Number(row?.efficiencyScore || 0),
+              metricValue: Number(metricValue || 0),
+              previousMetricValue,
+              metricDelta: Number(metricValue || 0) - previousMetricValue
+            };
+          })
+          .sort((a, b) => {
+            if (b.metricValue !== a.metricValue) return b.metricValue - a.metricValue;
+            return String(a.name).localeCompare(String(b.name));
+          })
+          .map((row, idx) => {
+            const rank = idx + 1;
+            const previousRank = prevRankMap.get(row.entityId) || null;
+            const rankChange = previousRank ? previousRank - rank : null;
+            const trendDirection =
+              row.metricDelta > 0 ? 'up' : row.metricDelta < 0 ? 'down' : 'flat';
+
+            return {
+              ...row,
+              rank,
+              previousRank,
+              rankChange,
+              trendDirection
+            };
+          });
+
+        const start = (page - 1) * perPage;
+        const leaderboard = rankedRows.slice(start, start + perPage);
+        const topPerformers = rankedRows.slice(0, topN);
+
+        const risingPerformer =
+          [...rankedRows]
+            .sort((a, b) => b.metricDelta - a.metricDelta)
+            .find((row) => row.metricDelta > 0) || null;
+
+        const needsAttention = rankedRows.length > 0 ? rankedRows[rankedRows.length - 1] : null;
+
+        res.json({
+          success: true,
+          data: {
+            level: grouping.groupBy,
+            metric,
+            timeRange,
+            period: {
+              anchor,
+              currentLabel: range.currentLabel,
+              previousLabel: range.previousLabel
+            },
+            topN,
+            page,
+            perPage,
+            totalCount: rankedRows.length,
+            topPerformers,
+            leaderboard,
+            risingPerformer,
+            needsAttention
+          }
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: 'Error fetching comparative analysis',
+          error: error.message
+        });
+      }
+    });
+
 // GET dashboard summary statistics
 router.get('/summary', async (req, res) => {
   try {

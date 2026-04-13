@@ -190,6 +190,89 @@ const normalizeKraRows = (rows = []) =>
     totalTarget: toSafeNumber(row?.totalTarget),
   }));
 
+const COMPARATIVE_LEVELS = [
+  { value: "corporation", mr: "महामंडळ", en: "Corporation" },
+  { value: "region", mr: "विभाग", en: "Region" },
+  { value: "circle", mr: "मंडळ", en: "Circle" },
+  { value: "division", mr: "उपविभाग", en: "Division" },
+];
+
+const COMPARATIVE_METRICS = [
+  {
+    value: "completionPercentage",
+    mr: "पूर्णता %",
+    en: "Completion %",
+    suffix: "%",
+  },
+  {
+    value: "totalAchievement",
+    mr: "एकूण साध्य",
+    en: "Total Achievement",
+    suffix: "",
+  },
+  {
+    value: "totalEntries",
+    mr: "एकूण नोंदी",
+    en: "Total Entries",
+    suffix: "",
+  },
+  {
+    value: "efficiencyScore",
+    mr: "कार्यक्षमता गुण",
+    en: "Efficiency Score",
+    suffix: "%",
+  },
+  {
+    value: "totalTarget",
+    mr: "एकूण लक्ष्य",
+    en: "Total Target",
+    suffix: "",
+  },
+];
+
+const COMPARATIVE_TIME_RANGES = [
+  { value: "month", mr: "महिना", en: "Month" },
+  { value: "quarter", mr: "तिमाही", en: "Quarter" },
+  { value: "year", mr: "वर्ष", en: "Year" },
+];
+
+const getComparativeMetricConfig = (metric) =>
+  COMPARATIVE_METRICS.find((item) => item.value === metric) ||
+  COMPARATIVE_METRICS[0];
+
+const formatComparativeValue = (value, metric) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  if (metric === "completionPercentage" || metric === "efficiencyScore") {
+    return `${n.toFixed(1)}%`;
+  }
+  if (metric === "totalEntries") return n.toLocaleString("en-IN");
+  return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+};
+
+const trendBadgeClass = (trendDirection) => {
+  if (trendDirection === "up") {
+    return "text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200";
+  }
+  if (trendDirection === "down") {
+    return "text-rose-700 bg-rose-50 ring-1 ring-rose-200";
+  }
+  return "text-slate-500 bg-slate-100 ring-1 ring-slate-200";
+};
+
+const trendSymbol = (trendDirection) => {
+  if (trendDirection === "up") return "↑";
+  if (trendDirection === "down") return "↓";
+  return "→";
+};
+
+const truncateAxisLabel = (label, maxLen = 24) => {
+  const text = String(label || "").trim();
+  if (!text) return "-";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1)}…`;
+};
+
 const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
   const usedLeftY = [];
   const usedRightY = [];
@@ -311,6 +394,7 @@ const ChartLoadingState = () => (
 
 export default function Dashboard() {
   const { t, language } = useLanguage();
+  const [activeDashboardTab, setActiveDashboardTab] = useState("overview");
   const [summary, setSummary] = useState(null);
   const [entries, setEntries] = useState([]);
 
@@ -341,6 +425,33 @@ export default function Dashboard() {
     period: "", // "YYYY-MM"
     kra: "",
   });
+
+  const [comparativeFilters, setComparativeFilters] = useState({
+    level: "corporation",
+    metric: "completionPercentage",
+    timeRange: "year",
+    topN: "5",
+  });
+
+  const [comparativeData, setComparativeData] = useState({
+    level: "corporation",
+    metric: "completionPercentage",
+    timeRange: "year",
+    period: null,
+    topN: 5,
+    page: 1,
+    perPage: 5,
+    totalCount: 0,
+    topPerformers: [],
+    leaderboard: [],
+    risingPerformer: null,
+    needsAttention: null,
+  });
+  const [isComparativeLoading, setIsComparativeLoading] = useState(false);
+
+  const comparativeNonZeroCount = (comparativeData?.topPerformers || []).filter(
+    (row) => Number(row?.metricValue || 0) > 0,
+  ).length;
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -890,6 +1001,52 @@ export default function Dashboard() {
     });
   };
 
+  const fetchComparativeData = async () => {
+    setIsComparativeLoading(true);
+    try {
+      const filterParams = {};
+
+      filterParams.level = comparativeFilters.level;
+      filterParams.metric = comparativeFilters.metric;
+      filterParams.timeRange = comparativeFilters.timeRange;
+      filterParams.topN = comparativeFilters.topN;
+
+      const res = await dashboardApi.getComparativeAnalysis(filterParams);
+      setComparativeData(
+        res?.data?.data || {
+          level: comparativeFilters.level,
+          metric: comparativeFilters.metric,
+          timeRange: comparativeFilters.timeRange,
+          period: null,
+          topN: Number(comparativeFilters.topN || 5),
+          page: 1,
+          perPage: Number(comparativeFilters.topN || 5),
+          totalCount: 0,
+          topPerformers: [],
+          leaderboard: [],
+          risingPerformer: null,
+          needsAttention: null,
+        },
+      );
+    } catch (error) {
+      console.error("Error fetching comparative analysis:", error);
+      setComparativeData((prev) => ({
+        ...prev,
+        topPerformers: [],
+        leaderboard: [],
+        risingPerformer: null,
+        needsAttention: null,
+      }));
+    } finally {
+      setIsComparativeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeDashboardTab !== "comparative") return;
+    fetchComparativeData();
+  }, [activeDashboardTab, comparativeFilters]);
+
   if (isLoading && !summary) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-violet-50/20">
@@ -904,6 +1061,8 @@ export default function Dashboard() {
     ...bottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
   );
   const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
+  const comparativeRows = comparativeData?.topPerformers || [];
+  const comparativeChartHeight = Math.max(340, comparativeRows.length * 46);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-violet-50/20 py-6 px-3 md:px-6">
@@ -958,1006 +1117,829 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ═══════ FILTERS ═══════ */}
-        <SectionCard className="sticky top-20 z-30">
-          <div className="flex items-center gap-3 mb-5">
-            <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white flex items-center justify-center text-base shadow">
-              🔍
-            </span>
-            <h2 className="text-lg font-bold text-slate-800">
-              {t("फिल्टर", "Filters")}
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-            {/* Corporation */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("महामंडळ", "Corporation")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
-                value={filters.corporation}
-                onChange={(e) =>
-                  handleFilterChange("corporation", e.target.value)
-                }
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {corporations.map((corp) => (
-                  <option key={corp._id} value={corp._id}>
-                    {localizeName(corp, language)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Region */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("विभाग", "Region")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
-                value={filters.region}
-                onChange={(e) => handleFilterChange("region", e.target.value)}
-                disabled={!filters.corporation}
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {regions.map((r) => (
-                  <option key={r._id} value={r._id}>
-                    {localizeName(r, language)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Circle */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("मंडळ", "Circle")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
-                value={filters.circle}
-                onChange={(e) => handleFilterChange("circle", e.target.value)}
-                disabled={!filters.region}
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {circles.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {localizeName(c, language)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Division */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("उपविभाग", "Division")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
-                value={filters.division}
-                onChange={(e) => handleFilterChange("division", e.target.value)}
-                disabled={!filters.circle}
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {divisions.map((d) => (
-                  <option key={d._id} value={d._id}>
-                    {localizeName(d, language)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* KRA Year */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("KRA वर्ष", "Year")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
-                value={filters.kraYear}
-                onChange={(e) => handleFilterChange("kraYear", e.target.value)}
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {kraYears.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Month */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("महिना", "Month")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
-                value={filters.period}
-                onChange={(e) => handleFilterChange("period", e.target.value)}
-                disabled={periods.length === 0}
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {periods.map((p) => {
-                  const key = `${p.year}-${String(p.month).padStart(2, "0")}`;
-                  return (
-                    <option
-                      key={key}
-                      value={key}
-                    >{`${String(p.month).padStart(2, "0")}/${p.year}`}</option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* KRA */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                {t("फलनिष्पत्ती", "KRA")}
-              </label>
-              <select
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
-                value={filters.kra}
-                onChange={(e) => handleFilterChange("kra", e.target.value)}
-              >
-                <option value="">{t("सर्व", "All")}</option>
-                {kras.map((kra) => (
-                  <option key={kra._id} value={kra._id}>
-                    {localizeName(kra, language)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Reset */}
-            <div className="flex items-end">
-              <button
-                onClick={resetFilters}
-                className="w-full text-sm px-3 py-2 rounded-lg font-bold bg-gradient-to-r from-slate-100 to-slate-200 text-slate-600 hover:from-slate-200 hover:to-slate-300 border border-slate-200 transition-all"
-              >
-                {t("रीसेट", "Reset")}
-              </button>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-400 mt-3 italic">
-            {t(
-              "टीप: मंडळ निवडल्यास विभागनिहाय विश्लेषण दिसेल.",
-              "Tip: Selecting a Circle switches to Division-wise analysis.",
-            )}
-          </p>
-        </SectionCard>
-
-        {/* ═══════ TOP / BOTTOM BAR CHARTS ═══════ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top 5 */}
-          <SectionCard>
-            <div className="flex items-center gap-3 mb-4">
-              <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white flex items-center justify-center text-lg shadow-md">
-                ▲
-              </span>
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("एकूण टॉप परफॉर्मर्स", "Over All Top Performers")}
-                </h3>
-                <p className="text-xs text-slate-400 font-medium">
-                  {getEntityLabel()} {t("नुसार साध्य %", "wise Achievement %")}
-                </p>
-              </div>
-            </div>
-            {isLoading ? (
-              <ChartLoadingState />
-            ) : topBars.length === 0 ? (
-              <ChartEmptyState
-                title={t("डेटा उपलब्ध नाही", "No top performers found")}
-              />
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart
-                  data={topBars}
-                  margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
-                >
-                  <defs>
-                    {BAR_TOP_COLORS.map((c, i) => (
-                      <linearGradient
-                        key={`gt-${i}`}
-                        id={`gradTop${i}`}
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop offset="0%" stopColor={c} stopOpacity={1} />
-                        <stop offset="100%" stopColor={c} stopOpacity={0.6} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#e2e8f0"
-                  />
-                  <XAxis
-                    dataKey="name"
-                    interval={0}
-                    tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    domain={[0, yDomainMax]}
-                    tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "#eef2ff" }}
-                    contentStyle={{
-                      borderRadius: "12px",
-                      border: "none",
-                      boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                      fontSize: 13,
-                    }}
-                    formatter={(v) => [
-                      `${Number(v || 0).toFixed(2)}%`,
-                      t("साध्य %", "Achievement %"),
-                    ]}
-                  />
-                  <Bar
-                    dataKey="achievementPercentage"
-                    radius={[8, 8, 0, 0]}
-                    cursor="pointer"
-                    name={t("साध्य %", "Achievement %")}
-                    onClick={(e) => handleEntityDrillDown(e?.payload)}
-                  >
-                    <LabelList
-                      dataKey="achievementPercentage"
-                      position="top"
-                      formatter={(value) => `${Number(value || 0).toFixed(1)}%`}
-                      style={{ fill: "#334155", fontSize: 11, fontWeight: 700 }}
-                    />
-                    {topBars.map((_, i) => (
-                      <Cell
-                        key={`top-${i}`}
-                        fill={`url(#gradTop${i % BAR_TOP_COLORS.length})`}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-            <p className="mt-3 text-[11px] font-semibold text-indigo-500 text-center bg-indigo-50 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
-              {t("बारवर क्लिक करा ड्रिल-डाउनसाठी", "Click a bar to drill down")}
-            </p>
-            {topBars.length > 0 && topBars.length < 5 && (
-              <p className="mt-2 text-center text-[11px] text-slate-400">
-                {t(
-                  "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
-                  "Fewer than 5 entities available",
-                )}
-              </p>
-            )}
-          </SectionCard>
-
-          {/* Bottom 5 */}
-          <SectionCard>
-            <div className="flex items-center gap-3 mb-4">
-              <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-red-500 text-white flex items-center justify-center text-lg shadow-md">
-                ▼
-              </span>
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("एकूण बॉटम परफॉर्मर्स", "Over All Bottom Performers")}
-                </h3>
-                <p className="text-xs text-slate-400 font-medium">
-                  {getEntityLabel()} {t("नुसार साध्य %", "wise Achievement %")}
-                </p>
-              </div>
-            </div>
-            {isLoading ? (
-              <ChartLoadingState />
-            ) : bottomBars.length === 0 ? (
-              <ChartEmptyState
-                title={t("डेटा उपलब्ध नाही", "No low performers found")}
-              />
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart
-                  data={bottomBars}
-                  margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
-                >
-                  <defs>
-                    {BAR_BTM_COLORS.map((c, i) => (
-                      <linearGradient
-                        key={`gb-${i}`}
-                        id={`gradBtm${i}`}
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop offset="0%" stopColor={c} stopOpacity={1} />
-                        <stop offset="100%" stopColor={c} stopOpacity={0.6} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#e2e8f0"
-                  />
-                  <XAxis
-                    dataKey="name"
-                    interval={0}
-                    tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    domain={[0, yDomainMax]}
-                    tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "#fff1f2" }}
-                    contentStyle={{
-                      borderRadius: "12px",
-                      border: "none",
-                      boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                      fontSize: 13,
-                    }}
-                    formatter={(v) => [
-                      `${Number(v || 0).toFixed(2)}%`,
-                      t("साध्य %", "Achievement %"),
-                    ]}
-                  />
-                  <Bar
-                    dataKey="achievementPercentage"
-                    radius={[8, 8, 0, 0]}
-                    cursor="pointer"
-                    name={t("साध्य %", "Achievement %")}
-                    onClick={(e) => handleEntityDrillDown(e?.payload)}
-                  >
-                    <LabelList
-                      dataKey="achievementPercentage"
-                      position="top"
-                      formatter={(value) => `${Number(value || 0).toFixed(1)}%`}
-                      style={{ fill: "#334155", fontSize: 11, fontWeight: 700 }}
-                    />
-                    {bottomBars.map((_, i) => (
-                      <Cell
-                        key={`btm-${i}`}
-                        fill={`url(#gradBtm${i % BAR_BTM_COLORS.length})`}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-            <p className="mt-3 text-[11px] font-semibold text-rose-500 text-center bg-rose-50 py-1.5 rounded-lg cursor-pointer hover:bg-rose-100 transition">
-              {t("बारवर क्लिक करा ड्रिल-डाउनसाठी", "Click a bar to drill down")}
-            </p>
-            {bottomBars.length > 0 && bottomBars.length < 5 && (
-              <p className="mt-2 text-center text-[11px] text-slate-400">
-                {t(
-                  "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
-                  "Fewer than 5 entities available",
-                )}
-              </p>
-            )}
-          </SectionCard>
-        </div>
-
-        {/* ═══════ MONTHLY TREND LINE CHART ═══════ */}
         <SectionCard>
-          <div className="flex items-center gap-3 mb-5">
-            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
-              📈
-            </span>
-            <div>
-              <h3 className="text-lg font-extrabold text-slate-800">
-                {t("महिनानिहाय KRA कल", "Month Wise KRA Trends")}
-              </h3>
-              <p className="text-xs text-slate-400 font-medium">
-                {t(
-                  "महिन्यानुसार नोंदी टक्केवारीचा कल",
-                  "Month-wise entries percentage trend",
-                )}
-              </p>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveDashboardTab("overview")}
+              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeDashboardTab === "overview"
+                  ? "bg-indigo-600 text-white shadow"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {t("मुख्य डॅशबोर्ड", "Main Dashboard")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveDashboardTab("comparative")}
+              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeDashboardTab === "comparative"
+                  ? "bg-indigo-600 text-white shadow"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {t("तुलनात्मक विश्लेषण", "Comparative Analysis")}
+            </button>
           </div>
-          {isLoading ? (
-            <ChartLoadingState />
-          ) : monthlyTrend.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>
-              <LineChart
-                data={monthlyTrend}
-                margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis
-                  type="category"
-                  dataKey="label"
-                  tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                  axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="number"
-                  domain={[0, 100]}
-                  tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
-                  axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                  tickLine={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "none",
-                    boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                    fontSize: 13,
-                  }}
-                  formatter={(v, _name, props) => {
-                    const count = Number(props?.payload?.entriesCount || 0);
-                    return [
-                      `${Number(v || 0).toFixed(2)}% (${count.toLocaleString("en-IN")} ${t("नोंदी", "entries")})`,
-                      t("नोंदी टक्केवारी", "Entries %"),
-                    ];
-                  }}
-                />
-                <Legend
-                  iconType="circle"
-                  wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                  formatter={() => t("नोंदी टक्केवारी", "Entries %")}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="entriesPercentage"
-                  name={t("नोंदी टक्केवारी", "Entries %")}
-                  stroke="#6366f1"
-                  strokeWidth={3}
-                  dot={{
-                    r: 5,
-                    fill: "#6366f1",
-                    stroke: "#fff",
-                    strokeWidth: 2,
-                  }}
-                  activeDot={{
-                    r: 7,
-                    fill: "#fff",
-                    stroke: "#6366f1",
-                    strokeWidth: 2,
-                  }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <ChartEmptyState
-              title={t("डेटा उपलब्ध नाही", "No trend data available")}
-            />
-          )}
         </SectionCard>
 
-        {/* ═══════ KRA ACHIEVEMENT RADAR + PROGRESS BARS ═══════ */}
-        {kraWiseData.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Radar Chart */}
-            <SectionCard>
+        {activeDashboardTab === "overview" && (
+          <>
+            {/* ═══════ FILTERS ═══════ */}
+            <SectionCard className="sticky top-20 z-30">
               <div className="flex items-center gap-3 mb-5">
-                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white flex items-center justify-center text-lg shadow-md">
-                  🕸️
+                <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white flex items-center justify-center text-base shadow">
+                  🔍
                 </span>
+                <h2 className="text-lg font-bold text-slate-800">
+                  {t("फिल्टर", "Filters")}
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+                {/* Corporation */}
                 <div>
-                  <h3 className="text-lg font-extrabold text-slate-800">
-                    {t("KRA कामगिरी रडार", "KRA Performance Radar")}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-medium">
-                    {t(
-                      "सर्व KRA चा तुलनात्मक दृश्य",
-                      "Comparative view across all KRAs",
-                    )}
-                  </p>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("महामंडळ", "Corporation")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                    value={filters.corporation}
+                    onChange={(e) =>
+                      handleFilterChange("corporation", e.target.value)
+                    }
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {corporations.map((corp) => (
+                      <option key={corp._id} value={corp._id}>
+                        {localizeName(corp, language)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Region */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("विभाग", "Region")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
+                    value={filters.region}
+                    onChange={(e) =>
+                      handleFilterChange("region", e.target.value)
+                    }
+                    disabled={!filters.corporation}
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {regions.map((r) => (
+                      <option key={r._id} value={r._id}>
+                        {localizeName(r, language)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Circle */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("मंडळ", "Circle")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
+                    value={filters.circle}
+                    onChange={(e) =>
+                      handleFilterChange("circle", e.target.value)
+                    }
+                    disabled={!filters.region}
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {circles.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {localizeName(c, language)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Division */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("उपविभाग", "Division")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
+                    value={filters.division}
+                    onChange={(e) =>
+                      handleFilterChange("division", e.target.value)
+                    }
+                    disabled={!filters.circle}
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {divisions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {localizeName(d, language)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* KRA Year */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("KRA वर्ष", "Year")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                    value={filters.kraYear}
+                    onChange={(e) =>
+                      handleFilterChange("kraYear", e.target.value)
+                    }
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {kraYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Month */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("महिना", "Month")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
+                    value={filters.period}
+                    onChange={(e) =>
+                      handleFilterChange("period", e.target.value)
+                    }
+                    disabled={periods.length === 0}
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {periods.map((p) => {
+                      const key = `${p.year}-${String(p.month).padStart(2, "0")}`;
+                      return (
+                        <option
+                          key={key}
+                          value={key}
+                        >{`${String(p.month).padStart(2, "0")}/${p.year}`}</option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* KRA */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("फलनिष्पत्ती", "KRA")}
+                  </label>
+                  <select
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                    value={filters.kra}
+                    onChange={(e) => handleFilterChange("kra", e.target.value)}
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {kras.map((kra) => (
+                      <option key={kra._id} value={kra._id}>
+                        {localizeName(kra, language)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reset */}
+                <div className="flex items-end">
+                  <button
+                    onClick={resetFilters}
+                    className="w-full text-sm px-3 py-2 rounded-lg font-bold bg-gradient-to-r from-slate-100 to-slate-200 text-slate-600 hover:from-slate-200 hover:to-slate-300 border border-slate-200 transition-all"
+                  >
+                    {t("रीसेट", "Reset")}
+                  </button>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={350}>
-                <RadarChart
-                  data={kraWiseData.map((k) => ({
-                    ...k,
-                    displayName: localizeString(
-                      k.kraName || `KRA ${k.kraId}`,
-                      language,
-                    ),
-                    achievementPct: Number(k.achievementPercentage) || 0,
-                  }))}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius="75%"
-                >
-                  <PolarGrid stroke="#e2e8f0" />
-                  <PolarAngleAxis
-                    dataKey="displayName"
-                    tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }}
-                  />
-                  <PolarRadiusAxis
-                    angle={90}
-                    domain={[0, 100]}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                  />
-                  <Radar
-                    name={t("साध्य %", "Achievement %")}
-                    dataKey="achievementPct"
-                    stroke="#8b5cf6"
-                    fill="#8b5cf6"
-                    fillOpacity={0.25}
-                    strokeWidth={2}
-                    dot={{
-                      r: 4,
-                      fill: "#8b5cf6",
-                      stroke: "#fff",
-                      strokeWidth: 2,
-                    }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "12px",
-                      border: "none",
-                      boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                      fontSize: 12,
-                    }}
-                    formatter={(v) => [
-                      `${Number(v || 0).toFixed(1)}%`,
-                      t("साध्य %", "Achievement %"),
-                    ]}
-                  />
-                  <Legend
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            </SectionCard>
 
-            {/* KRA Progress Bars */}
-            <SectionCard>
-              <div className="flex items-center gap-3 mb-5">
-                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-lg shadow-md">
-                  📊
-                </span>
-                <div>
-                  <h3 className="text-lg font-extrabold text-slate-800">
-                    {t("KRA निहाय प्रगती", "KRA-wise Progress")}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-medium">
-                    {t(
-                      "प्रत्येक KRA ची साध्य स्थिती",
-                      "Achievement status of each KRA",
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                {kraWiseData.map((kra, idx) => {
-                  const pct = Math.min(
-                    Number(kra.achievementPercentage) || 0,
-                    100,
-                  );
-                  const progressColors = [
-                    "from-indigo-500 to-blue-500",
-                    "from-amber-500 to-orange-500",
-                    "from-emerald-500 to-teal-500",
-                    "from-rose-500 to-pink-500",
-                    "from-violet-500 to-purple-500",
-                    "from-cyan-500 to-sky-500",
-                    "from-fuchsia-500 to-pink-500",
-                  ];
-                  const bgColors = [
-                    "bg-indigo-100",
-                    "bg-amber-100",
-                    "bg-emerald-100",
-                    "bg-rose-100",
-                    "bg-violet-100",
-                    "bg-cyan-100",
-                    "bg-fuchsia-100",
-                  ];
-                  const textColors = [
-                    "text-indigo-700",
-                    "text-amber-700",
-                    "text-emerald-700",
-                    "text-rose-700",
-                    "text-violet-700",
-                    "text-cyan-700",
-                    "text-fuchsia-700",
-                  ];
-                  const colorIdx = idx % progressColors.length;
-                  return (
-                    <div key={kra.kraId || idx}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-bold text-slate-700 truncate max-w-[65%]">
-                          {localizeString(
-                            kra.kraName || `KRA ${kra.kraId}`,
-                            language,
-                          )}
-                        </span>
-                        <span
-                          className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${bgColors[colorIdx]} ${textColors[colorIdx]}`}
-                        >
-                          {(Number(kra.achievementPercentage) || 0).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`absolute inset-y-0 left-0 bg-gradient-to-r ${progressColors[colorIdx]} rounded-full transition-all duration-700 ease-out`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
-                        <span>
-                          {t("साध्य", "Ach")}:{" "}
-                          {Number(kra.totalAchievement || 0).toFixed(1)}
-                        </span>
-                        <span>
-                          {t("लक्ष्य", "Target")}:{" "}
-                          {Number(kra.totalTarget || 0).toFixed(1)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-                {kraWiseData.length > 0 &&
-                  (() => {
-                    const overallAverage =
-                      kraWiseData.reduce(
-                        (sum, kra) =>
-                          sum + (Number(kra.achievementPercentage) || 0),
-                        0,
-                      ) / kraWiseData.length;
-                    const overallPct = Math.min(
-                      Number(overallAverage) || 0,
-                      100,
-                    );
-
-                    return (
-                      <div className="pt-3 mt-2 border-t border-slate-200">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
-                            {t("एकूण साध्य", "Overall Achivments")}
-                          </span>
-                          <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
-                            {overallAverage.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-500 rounded-full transition-all duration-700 ease-out"
-                            style={{ width: `${overallPct}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
-                          <span>{t("सरासरी %", "Average %")}</span>
-                          <span>{t("सर्व KRA", "All KRAs")}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                {kraWiseData.length === 0 && (
-                  <p className="text-center text-slate-400 text-sm py-8">
-                    {t("डेटा उपलब्ध नाही", "No data available")}
-                  </p>
+              <p className="text-xs text-slate-400 mt-3 italic">
+                {t(
+                  "टीप: मंडळ निवडल्यास विभागनिहाय विश्लेषण दिसेल.",
+                  "Tip: Selecting a Circle switches to Division-wise analysis.",
                 )}
-              </div>
+              </p>
             </SectionCard>
-          </div>
+          </>
         )}
 
-        {/* ═══════ WEIGHTAGE PIE + LEADERBOARD ═══════ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Weightage Pie */}
-          <SectionCard>
-            <div className="flex items-center gap-3 mb-5">
-              <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white flex items-center justify-center text-lg shadow-md">
-                ⚖️
-              </span>
-              <h3 className="text-lg font-extrabold text-slate-800">
-                {t("KRA भारांश", "KRA Weightage Distribution")}
-              </h3>
-            </div>
-            {isLoading ? (
-              <ChartLoadingState />
-            ) : weightageDistribution.length === 0 ? (
-              <ChartEmptyState
-                title={t("डेटा उपलब्ध नाही", "No weightage data available")}
-              />
-            ) : (
-              <div className="space-y-4">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={weightageDistribution}
-                      dataKey="weight"
-                      nameKey="kraName"
-                      cx="50%"
-                      cy="50%"
-                      startAngle={90}
-                      endAngle={-270}
-                      innerRadius={55}
-                      outerRadius={112}
-                      paddingAngle={3}
-                      labelLine={false}
-                      label={(d) => `${Number(d?.weight || 0).toFixed(0)}%`}
-                      stroke="none"
+        {activeDashboardTab === "overview" && (
+          <>
+            {/* ═══════ TOP / BOTTOM BAR CHARTS ═══════ */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Top 5 */}
+              <SectionCard>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white flex items-center justify-center text-lg shadow-md">
+                    ▲
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-800">
+                      {t("एकूण टॉप परफॉर्मर्स", "Over All Top Performers")}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {getEntityLabel()}{" "}
+                      {t("नुसार साध्य %", "wise Achievement %")}
+                    </p>
+                  </div>
+                </div>
+                {isLoading ? (
+                  <ChartLoadingState />
+                ) : topBars.length === 0 ? (
+                  <ChartEmptyState
+                    title={t("डेटा उपलब्ध नाही", "No top performers found")}
+                  />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={topBars}
+                      margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
                     >
-                      {weightageDistribution.map((_, index) => (
-                        <Cell
-                          key={`wc-${index}`}
-                          fill={getKraColor(weightageDistribution[index])}
+                      <defs>
+                        {BAR_TOP_COLORS.map((c, i) => (
+                          <linearGradient
+                            key={`gt-${i}`}
+                            id={`gradTop${i}`}
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop offset="0%" stopColor={c} stopOpacity={1} />
+                            <stop
+                              offset="100%"
+                              stopColor={c}
+                              stopOpacity={0.6}
+                            />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#e2e8f0"
+                      />
+                      <XAxis
+                        dataKey="name"
+                        interval={0}
+                        tick={{
+                          fill: "#64748b",
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                        axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        domain={[0, yDomainMax]}
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "#eef2ff" }}
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "none",
+                          boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                          fontSize: 13,
+                        }}
+                        formatter={(v) => [
+                          `${Number(v || 0).toFixed(2)}%`,
+                          t("साध्य %", "Achievement %"),
+                        ]}
+                      />
+                      <Bar
+                        dataKey="achievementPercentage"
+                        radius={[8, 8, 0, 0]}
+                        cursor="pointer"
+                        name={t("साध्य %", "Achievement %")}
+                        onClick={(e) => handleEntityDrillDown(e?.payload)}
+                      >
+                        <LabelList
+                          dataKey="achievementPercentage"
+                          position="top"
+                          formatter={(value) =>
+                            `${Number(value || 0).toFixed(1)}%`
+                          }
+                          style={{
+                            fill: "#334155",
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
                         />
-                      ))}
-                    </Pie>
+                        {topBars.map((_, i) => (
+                          <Cell
+                            key={`top-${i}`}
+                            fill={`url(#gradTop${i % BAR_TOP_COLORS.length})`}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+                <p className="mt-3 text-[11px] font-semibold text-indigo-500 text-center bg-indigo-50 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                  {t(
+                    "बारवर क्लिक करा ड्रिल-डाउनसाठी",
+                    "Click a bar to drill down",
+                  )}
+                </p>
+                {topBars.length > 0 && topBars.length < 5 && (
+                  <p className="mt-2 text-center text-[11px] text-slate-400">
+                    {t(
+                      "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
+                      "Fewer than 5 entities available",
+                    )}
+                  </p>
+                )}
+              </SectionCard>
+
+              {/* Bottom 5 */}
+              <SectionCard>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-red-500 text-white flex items-center justify-center text-lg shadow-md">
+                    ▼
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-800">
+                      {t("एकूण बॉटम परफॉर्मर्स", "Over All Bottom Performers")}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {getEntityLabel()}{" "}
+                      {t("नुसार साध्य %", "wise Achievement %")}
+                    </p>
+                  </div>
+                </div>
+                {isLoading ? (
+                  <ChartLoadingState />
+                ) : bottomBars.length === 0 ? (
+                  <ChartEmptyState
+                    title={t("डेटा उपलब्ध नाही", "No low performers found")}
+                  />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={bottomBars}
+                      margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
+                    >
+                      <defs>
+                        {BAR_BTM_COLORS.map((c, i) => (
+                          <linearGradient
+                            key={`gb-${i}`}
+                            id={`gradBtm${i}`}
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop offset="0%" stopColor={c} stopOpacity={1} />
+                            <stop
+                              offset="100%"
+                              stopColor={c}
+                              stopOpacity={0.6}
+                            />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#e2e8f0"
+                      />
+                      <XAxis
+                        dataKey="name"
+                        interval={0}
+                        tick={{
+                          fill: "#64748b",
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                        axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        domain={[0, yDomainMax]}
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "#fff1f2" }}
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "none",
+                          boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                          fontSize: 13,
+                        }}
+                        formatter={(v) => [
+                          `${Number(v || 0).toFixed(2)}%`,
+                          t("साध्य %", "Achievement %"),
+                        ]}
+                      />
+                      <Bar
+                        dataKey="achievementPercentage"
+                        radius={[8, 8, 0, 0]}
+                        cursor="pointer"
+                        name={t("साध्य %", "Achievement %")}
+                        onClick={(e) => handleEntityDrillDown(e?.payload)}
+                      >
+                        <LabelList
+                          dataKey="achievementPercentage"
+                          position="top"
+                          formatter={(value) =>
+                            `${Number(value || 0).toFixed(1)}%`
+                          }
+                          style={{
+                            fill: "#334155",
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
+                        />
+                        {bottomBars.map((_, i) => (
+                          <Cell
+                            key={`btm-${i}`}
+                            fill={`url(#gradBtm${i % BAR_BTM_COLORS.length})`}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+                <p className="mt-3 text-[11px] font-semibold text-rose-500 text-center bg-rose-50 py-1.5 rounded-lg cursor-pointer hover:bg-rose-100 transition">
+                  {t(
+                    "बारवर क्लिक करा ड्रिल-डाउनसाठी",
+                    "Click a bar to drill down",
+                  )}
+                </p>
+                {bottomBars.length > 0 && bottomBars.length < 5 && (
+                  <p className="mt-2 text-center text-[11px] text-slate-400">
+                    {t(
+                      "उपलब्ध नोंदी ५ पेक्षा कमी आहेत",
+                      "Fewer than 5 entities available",
+                    )}
+                  </p>
+                )}
+              </SectionCard>
+            </div>
+
+            {/* ═══════ MONTHLY TREND LINE CHART ═══════ */}
+            <SectionCard>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
+                  📈
+                </span>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-800">
+                    {t("महिनानिहाय KRA कल", "Month Wise KRA Trends")}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {t(
+                      "महिन्यानुसार नोंदी टक्केवारीचा कल",
+                      "Month-wise entries percentage trend",
+                    )}
+                  </p>
+                </div>
+              </div>
+              {isLoading ? (
+                <ChartLoadingState />
+              ) : monthlyTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height={350}>
+                  <LineChart
+                    data={monthlyTrend}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      type="category"
+                      dataKey="label"
+                      tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                      tickLine={false}
+                    />
                     <Tooltip
                       contentStyle={{
                         borderRadius: "12px",
                         border: "none",
-                        boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                        fontSize: 12,
+                        boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                        fontSize: 13,
                       }}
-                      formatter={(v, _n, props) => {
-                        const name = localizeString(
-                          props?.payload?.kraName || "",
-                          language,
-                        );
+                      formatter={(v, _name, props) => {
+                        const count = Number(props?.payload?.entriesCount || 0);
                         return [
-                          `${Number(v || 0).toFixed(2)}%`,
-                          name || t("KRA", "KRA"),
+                          `${Number(v || 0).toFixed(2)}% (${count.toLocaleString("en-IN")} ${t("नोंदी", "entries")})`,
+                          t("नोंदी टक्केवारी", "Entries %"),
                         ];
                       }}
                     />
-                  </PieChart>
+                    <Legend
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
+                      formatter={() => t("नोंदी टक्केवारी", "Entries %")}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="entriesPercentage"
+                      name={t("नोंदी टक्केवारी", "Entries %")}
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      dot={{
+                        r: 5,
+                        fill: "#6366f1",
+                        stroke: "#fff",
+                        strokeWidth: 2,
+                      }}
+                      activeDot={{
+                        r: 7,
+                        fill: "#fff",
+                        stroke: "#6366f1",
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
+              ) : (
+                <ChartEmptyState
+                  title={t("डेटा उपलब्ध नाही", "No trend data available")}
+                />
+              )}
+            </SectionCard>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                    {t("KRA तपशील", "KRA Details")}
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                    {weightageDistribution.map((item, index) => (
-                      <div
-                        key={`weight-legend-${item?.kraId || index}`}
-                        className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
-                        title={localizeString(item?.kraName || "", language)}
-                      >
-                        <span
-                          className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
-                          style={{
-                            backgroundColor: getKraColor(item),
-                          }}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
-                            {localizeString(item?.kraName || "-", language)}
-                          </p>
-                          <p className="text-[11px] font-bold text-slate-500 mt-0.5">
-                            {Number(item?.weight || 0).toFixed(2)}%
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+            {/* ═══════ KRA ACHIEVEMENT RADAR + PROGRESS BARS ═══════ */}
+            {kraWiseData.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Radar Chart */}
+                <SectionCard>
+                  <div className="flex items-center gap-3 mb-5">
+                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white flex items-center justify-center text-lg shadow-md">
+                      🕸️
+                    </span>
+                    <div>
+                      <h3 className="text-lg font-extrabold text-slate-800">
+                        {t("KRA कामगिरी रडार", "KRA Performance Radar")}
+                      </h3>
+                      <p className="text-xs text-slate-400 font-medium">
+                        {t(
+                          "सर्व KRA चा तुलनात्मक दृश्य",
+                          "Comparative view across all KRAs",
+                        )}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <RadarChart
+                      data={kraWiseData.map((k) => ({
+                        ...k,
+                        displayName: localizeString(
+                          k.kraName || `KRA ${k.kraId}`,
+                          language,
+                        ),
+                        achievementPct: Number(k.achievementPercentage) || 0,
+                      }))}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius="75%"
+                    >
+                      <PolarGrid stroke="#e2e8f0" />
+                      <PolarAngleAxis
+                        dataKey="displayName"
+                        tick={{
+                          fill: "#64748b",
+                          fontSize: 10,
+                          fontWeight: 600,
+                        }}
+                      />
+                      <PolarRadiusAxis
+                        angle={90}
+                        domain={[0, 100]}
+                        tick={{ fill: "#94a3b8", fontSize: 10 }}
+                      />
+                      <Radar
+                        name={t("साध्य %", "Achievement %")}
+                        dataKey="achievementPct"
+                        stroke="#8b5cf6"
+                        fill="#8b5cf6"
+                        fillOpacity={0.25}
+                        strokeWidth={2}
+                        dot={{
+                          r: 4,
+                          fill: "#8b5cf6",
+                          stroke: "#fff",
+                          strokeWidth: 2,
+                        }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "none",
+                          boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                          fontSize: 12,
+                        }}
+                        formatter={(v) => [
+                          `${Number(v || 0).toFixed(1)}%`,
+                          t("साध्य %", "Achievement %"),
+                        ]}
+                      />
+                      <Legend
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </SectionCard>
+
+                {/* KRA Progress Bars */}
+                <SectionCard>
+                  <div className="flex items-center gap-3 mb-5">
+                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-lg shadow-md">
+                      📊
+                    </span>
+                    <div>
+                      <h3 className="text-lg font-extrabold text-slate-800">
+                        {t("KRA निहाय प्रगती", "KRA-wise Progress")}
+                      </h3>
+                      <p className="text-xs text-slate-400 font-medium">
+                        {t(
+                          "प्रत्येक KRA ची साध्य स्थिती",
+                          "Achievement status of each KRA",
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    {kraWiseData.map((kra, idx) => {
+                      const pct = Math.min(
+                        Number(kra.achievementPercentage) || 0,
+                        100,
+                      );
+                      const progressColors = [
+                        "from-indigo-500 to-blue-500",
+                        "from-amber-500 to-orange-500",
+                        "from-emerald-500 to-teal-500",
+                        "from-rose-500 to-pink-500",
+                        "from-violet-500 to-purple-500",
+                        "from-cyan-500 to-sky-500",
+                        "from-fuchsia-500 to-pink-500",
+                      ];
+                      const bgColors = [
+                        "bg-indigo-100",
+                        "bg-amber-100",
+                        "bg-emerald-100",
+                        "bg-rose-100",
+                        "bg-violet-100",
+                        "bg-cyan-100",
+                        "bg-fuchsia-100",
+                      ];
+                      const textColors = [
+                        "text-indigo-700",
+                        "text-amber-700",
+                        "text-emerald-700",
+                        "text-rose-700",
+                        "text-violet-700",
+                        "text-cyan-700",
+                        "text-fuchsia-700",
+                      ];
+                      const colorIdx = idx % progressColors.length;
+                      return (
+                        <div key={kra.kraId || idx}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-sm font-bold text-slate-700 truncate max-w-[65%]">
+                              {localizeString(
+                                kra.kraName || `KRA ${kra.kraId}`,
+                                language,
+                              )}
+                            </span>
+                            <span
+                              className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${bgColors[colorIdx]} ${textColors[colorIdx]}`}
+                            >
+                              {(Number(kra.achievementPercentage) || 0).toFixed(
+                                1,
+                              )}
+                              %
+                            </span>
+                          </div>
+                          <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`absolute inset-y-0 left-0 bg-gradient-to-r ${progressColors[colorIdx]} rounded-full transition-all duration-700 ease-out`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
+                            <span>
+                              {t("साध्य", "Ach")}:{" "}
+                              {Number(kra.totalAchievement || 0).toFixed(1)}
+                            </span>
+                            <span>
+                              {t("लक्ष्य", "Target")}:{" "}
+                              {Number(kra.totalTarget || 0).toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {kraWiseData.length > 0 &&
+                      (() => {
+                        const overallAverage =
+                          kraWiseData.reduce(
+                            (sum, kra) =>
+                              sum + (Number(kra.achievementPercentage) || 0),
+                            0,
+                          ) / kraWiseData.length;
+                        const overallPct = Math.min(
+                          Number(overallAverage) || 0,
+                          100,
+                        );
+
+                        return (
+                          <div className="pt-3 mt-2 border-t border-slate-200">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
+                                {t("एकूण साध्य", "Overall Achivments")}
+                              </span>
+                              <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
+                                {overallAverage.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-500 rounded-full transition-all duration-700 ease-out"
+                                style={{ width: `${overallPct}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
+                              <span>{t("सरासरी %", "Average %")}</span>
+                              <span>{t("सर्व KRA", "All KRAs")}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    {kraWiseData.length === 0 && (
+                      <p className="text-center text-slate-400 text-sm py-8">
+                        {t("डेटा उपलब्ध नाही", "No data available")}
+                      </p>
+                    )}
+                  </div>
+                </SectionCard>
               </div>
             )}
-          </SectionCard>
 
-          {/* Leaderboard */}
-          <SectionCard className="overflow-hidden">
-            <div className="flex items-center gap-3 mb-5">
-              <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-500 text-white flex items-center justify-center text-lg shadow-md">
-                🏅
-              </span>
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-800">
-                  {t(
-                    "चालू KRA व मागील KRA तुलना",
-                    "Comparison of current KRA vs previous KRA",
-                  )}
-                </h3>
-                <p className="text-xs text-slate-400 font-medium">
-                  {t("महिनानिहाय तुलना", "Month-wise comparison")}
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-gradient-to-r from-slate-50 to-slate-100">
-                    <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {getEntityLabel()}
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t("मागील महिना %", "Previous Month %")}
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t("चालू महिना %", "Current Month %")}
-                    </th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t("रँक", "Rank")}
-                    </th>
-                    <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {t("बदल", "Trend")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {rankTable.map((row, idx) => {
-                    const prev = Number(row.previousMonthPercentage) || 0;
-                    const curr = Number(row.currentMonthPercentage) || 0;
-                    const change = row.rankChange;
-                    return (
-                      <tr
-                        key={row.entityId}
-                        className={`hover:bg-indigo-50/40 transition-colors cursor-pointer ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
-                        onClick={() => handleEntityDrillDown(row)}
-                      >
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-700">
-                          {row.name}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${getPercentBadgeClass(prev)}`}
-                          >
-                            {prev.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${getPercentBadgeClass(curr)}`}
-                          >
-                            {curr.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 text-xs font-extrabold">
-                            {row.rank}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-center">
-                          {change === null || change === undefined ? (
-                            <span className="text-slate-300 text-lg">—</span>
-                          ) : change > 0 ? (
-                            <span className="text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-full text-xs ring-1 ring-emerald-200">
-                              ↑{change}
-                            </span>
-                          ) : change < 0 ? (
-                            <span className="text-rose-600 font-bold bg-rose-50 px-2.5 py-1 rounded-full text-xs ring-1 ring-rose-200">
-                              ↓{Math.abs(change)}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-bold text-xs">
-                              —
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {rankTable.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="text-center py-8 text-slate-400 text-sm"
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-2xl">📊</span>
-                          <span>
-                            {t(
-                              "निवडलेल्या कालावधीसाठी डेटा उपलब्ध नाही",
-                              "No data available for the selected period",
-                            )}
-                          </span>
-                          <span className="text-xs text-slate-300">
-                            {t(
-                              "कृपया फिल्टर बदलून पहा",
-                              "Try changing filters or period",
-                            )}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </SectionCard>
-        </div>
-
-        {/* ═══════ CORPORATION-WISE PIE CHARTS ═══════ */}
-        <SectionCard className="relative overflow-hidden">
-          {/* decorative blobs */}
-          <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-violet-100/50 blur-3xl pointer-events-none"></div>
-          <div className="absolute -left-12 -bottom-12 w-40 h-40 rounded-full bg-indigo-100/50 blur-3xl pointer-events-none"></div>
-
-          <div className="relative z-10 flex items-center gap-4 mb-6">
-            <span className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center text-2xl shadow-lg">
-              🏢
-            </span>
-            <div>
-              <h3 className="text-xl font-extrabold text-slate-800">
-                {t(
-                  "महामंडळनिहाय KRA कामगिरी",
-                  "Corporation-wise KRA Performance",
-                )}
-              </h3>
-              <p className="text-xs text-slate-400 font-medium">
-                {t(
-                  "प्रत्येक महामंडळासाठी KRA स्कोअर शेअर पाई चार्ट.",
-                  "Score share breakdown per corporation.",
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-            {isLoading ? (
-              <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ChartLoadingState />
-                <ChartLoadingState />
-              </div>
-            ) : (
-              corpKraPies.map((corp, corpIdx) => {
-                const corpPieLabel = createNonOverlappingPieLabel();
-                const borderColors = [
-                  "border-indigo-200",
-                  "border-violet-200",
-                  "border-cyan-200",
-                  "border-amber-200",
-                  "border-emerald-200",
-                  "border-rose-200",
-                ];
-                const dotColors = [
-                  "bg-indigo-500",
-                  "bg-violet-500",
-                  "bg-cyan-500",
-                  "bg-amber-500",
-                  "bg-emerald-500",
-                  "bg-rose-500",
-                ];
-                return (
-                  <div
-                    key={corp.corporationId}
-                    className={`border ${borderColors[corpIdx % borderColors.length]} rounded-2xl p-5 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
-                  >
-                    <h4 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
-                      <span
-                        className={`w-3 h-3 rounded-full ${dotColors[corpIdx % dotColors.length]} inline-block`}
-                      ></span>
-                      {corp.corporationName}
-                    </h4>
-                    <ResponsiveContainer width="100%" height={320}>
+            {/* ═══════ WEIGHTAGE PIE + LEADERBOARD ═══════ */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Weightage Pie */}
+              <SectionCard>
+                <div className="flex items-center gap-3 mb-5">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white flex items-center justify-center text-lg shadow-md">
+                    ⚖️
+                  </span>
+                  <h3 className="text-lg font-extrabold text-slate-800">
+                    {t("KRA भारांश", "KRA Weightage Distribution")}
+                  </h3>
+                </div>
+                {isLoading ? (
+                  <ChartLoadingState />
+                ) : weightageDistribution.length === 0 ? (
+                  <ChartEmptyState
+                    title={t("डेटा उपलब्ध नाही", "No weightage data available")}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie
-                          data={corp.data || []}
-                          dataKey="slicePercentage"
+                          data={weightageDistribution}
+                          dataKey="weight"
                           nameKey="kraName"
                           cx="50%"
-                          cy="45%"
+                          cy="50%"
                           startAngle={90}
                           endAngle={-270}
-                          innerRadius={40}
-                          outerRadius={90}
-                          paddingAngle={2}
+                          innerRadius={55}
+                          outerRadius={112}
+                          paddingAngle={3}
+                          labelLine={false}
+                          label={(d) => `${Number(d?.weight || 0).toFixed(0)}%`}
                           stroke="none"
-                          label={corpPieLabel.label}
-                          labelLine={corpPieLabel.labelLine}
                         >
-                          {(corp.data || []).map((slice, index) => (
+                          {weightageDistribution.map((_, index) => (
                             <Cell
-                              key={`cell-${corp.corporationId}-${index}`}
-                              fill={getKraColor(slice)}
+                              key={`wc-${index}`}
+                              fill={getKraColor(weightageDistribution[index])}
                             />
                           ))}
                         </Pie>
@@ -1969,36 +1951,746 @@ export default function Dashboard() {
                             fontSize: 12,
                           }}
                           formatter={(v, _n, props) => {
-                            const p = props?.payload;
-                            const ach = Number(p?.achievementPercentage || 0);
-                            const w = Number(p?.weight || 0);
+                            const name = localizeString(
+                              props?.payload?.kraName || "",
+                              language,
+                            );
                             return [
-                              `${Number(v || 0).toFixed(2)}% (Ach ${ach.toFixed(1)}%, W ${w})`,
-                              t("स्कोअर शेअर", "Score share"),
+                              `${Number(v || 0).toFixed(2)}%`,
+                              name || t("KRA", "KRA"),
                             ];
                           }}
-                          labelFormatter={(label) =>
-                            localizeString(label, language)
-                          }
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{ fontSize: 11, fontWeight: 600 }}
-                          formatter={(value) => localizeString(value, language)}
                         />
                       </PieChart>
                     </ResponsiveContainer>
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                        {t("KRA तपशील", "KRA Details")}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
+                        {weightageDistribution.map((item, index) => (
+                          <div
+                            key={`weight-legend-${item?.kraId || index}`}
+                            className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
+                            title={localizeString(
+                              item?.kraName || "",
+                              language,
+                            )}
+                          >
+                            <span
+                              className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                              style={{
+                                backgroundColor: getKraColor(item),
+                              }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
+                                {localizeString(item?.kraName || "-", language)}
+                              </p>
+                              <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                                {Number(item?.weight || 0).toFixed(2)}%
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                );
-              })
-            )}
-            {!isLoading && corpKraPies.length === 0 && (
-              <div className="col-span-full text-center py-12 text-slate-400 text-sm">
-                {t("डेटा उपलब्ध नाही", "No corporation data available")}
+                )}
+              </SectionCard>
+
+              {/* Leaderboard */}
+              <SectionCard className="overflow-hidden">
+                <div className="flex items-center gap-3 mb-5">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-500 text-white flex items-center justify-center text-lg shadow-md">
+                    🏅
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-800">
+                      {t(
+                        "चालू KRA व मागील KRA तुलना",
+                        "Comparison of current KRA vs previous KRA",
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {t("महिनानिहाय तुलना", "Month-wise comparison")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-slate-50 to-slate-100">
+                        <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          {getEntityLabel()}
+                        </th>
+                        <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          {t("मागील महिना %", "Previous Month %")}
+                        </th>
+                        <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          {t("चालू महिना %", "Current Month %")}
+                        </th>
+                        <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          {t("रँक", "Rank")}
+                        </th>
+                        <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          {t("बदल", "Trend")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {rankTable.map((row, idx) => {
+                        const prev = Number(row.previousMonthPercentage) || 0;
+                        const curr = Number(row.currentMonthPercentage) || 0;
+                        const change = row.rankChange;
+                        return (
+                          <tr
+                            key={row.entityId}
+                            className={`hover:bg-indigo-50/40 transition-colors cursor-pointer ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+                            onClick={() => handleEntityDrillDown(row)}
+                          >
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-700">
+                              {row.name}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${getPercentBadgeClass(prev)}`}
+                              >
+                                {prev.toFixed(1)}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${getPercentBadgeClass(curr)}`}
+                              >
+                                {curr.toFixed(1)}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 text-xs font-extrabold">
+                                {row.rank}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-center">
+                              {change === null || change === undefined ? (
+                                <span className="text-slate-300 text-lg">
+                                  —
+                                </span>
+                              ) : change > 0 ? (
+                                <span className="text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-full text-xs ring-1 ring-emerald-200">
+                                  ↑{change}
+                                </span>
+                              ) : change < 0 ? (
+                                <span className="text-rose-600 font-bold bg-rose-50 px-2.5 py-1 rounded-full text-xs ring-1 ring-rose-200">
+                                  ↓{Math.abs(change)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-bold text-xs">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {rankTable.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="text-center py-8 text-slate-400 text-sm"
+                          >
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-2xl">📊</span>
+                              <span>
+                                {t(
+                                  "निवडलेल्या कालावधीसाठी डेटा उपलब्ध नाही",
+                                  "No data available for the selected period",
+                                )}
+                              </span>
+                              <span className="text-xs text-slate-300">
+                                {t(
+                                  "कृपया फिल्टर बदलून पहा",
+                                  "Try changing filters or period",
+                                )}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </SectionCard>
+            </div>
+
+            {/* ═══════ CORPORATION-WISE PIE CHARTS ═══════ */}
+            <SectionCard className="relative overflow-hidden">
+              {/* decorative blobs */}
+              <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-violet-100/50 blur-3xl pointer-events-none"></div>
+              <div className="absolute -left-12 -bottom-12 w-40 h-40 rounded-full bg-indigo-100/50 blur-3xl pointer-events-none"></div>
+
+              <div className="relative z-10 flex items-center gap-4 mb-6">
+                <span className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 text-white flex items-center justify-center text-2xl shadow-lg">
+                  🏢
+                </span>
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-800">
+                    {t(
+                      "महामंडळनिहाय KRA कामगिरी",
+                      "Corporation-wise KRA Performance",
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {t(
+                      "प्रत्येक महामंडळासाठी KRA स्कोअर शेअर पाई चार्ट.",
+                      "Score share breakdown per corporation.",
+                    )}
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
-        </SectionCard>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                {isLoading ? (
+                  <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <ChartLoadingState />
+                    <ChartLoadingState />
+                  </div>
+                ) : (
+                  corpKraPies.map((corp, corpIdx) => {
+                    const corpPieLabel = createNonOverlappingPieLabel();
+                    const borderColors = [
+                      "border-indigo-200",
+                      "border-violet-200",
+                      "border-cyan-200",
+                      "border-amber-200",
+                      "border-emerald-200",
+                      "border-rose-200",
+                    ];
+                    const dotColors = [
+                      "bg-indigo-500",
+                      "bg-violet-500",
+                      "bg-cyan-500",
+                      "bg-amber-500",
+                      "bg-emerald-500",
+                      "bg-rose-500",
+                    ];
+                    return (
+                      <div
+                        key={corp.corporationId}
+                        className={`border ${borderColors[corpIdx % borderColors.length]} rounded-2xl p-5 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
+                      >
+                        <h4 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
+                          <span
+                            className={`w-3 h-3 rounded-full ${dotColors[corpIdx % dotColors.length]} inline-block`}
+                          ></span>
+                          {corp.corporationName}
+                        </h4>
+                        <ResponsiveContainer width="100%" height={320}>
+                          <PieChart>
+                            <Pie
+                              data={corp.data || []}
+                              dataKey="slicePercentage"
+                              nameKey="kraName"
+                              cx="50%"
+                              cy="45%"
+                              startAngle={90}
+                              endAngle={-270}
+                              innerRadius={40}
+                              outerRadius={90}
+                              paddingAngle={2}
+                              stroke="none"
+                              label={corpPieLabel.label}
+                              labelLine={corpPieLabel.labelLine}
+                            >
+                              {(corp.data || []).map((slice, index) => (
+                                <Cell
+                                  key={`cell-${corp.corporationId}-${index}`}
+                                  fill={getKraColor(slice)}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{
+                                borderRadius: "12px",
+                                border: "none",
+                                boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                                fontSize: 12,
+                              }}
+                              formatter={(v, _n, props) => {
+                                const p = props?.payload;
+                                const ach = Number(
+                                  p?.achievementPercentage || 0,
+                                );
+                                const w = Number(p?.weight || 0);
+                                return [
+                                  `${Number(v || 0).toFixed(2)}% (Ach ${ach.toFixed(1)}%, W ${w})`,
+                                  t("स्कोअर शेअर", "Score share"),
+                                ];
+                              }}
+                              labelFormatter={(label) =>
+                                localizeString(label, language)
+                              }
+                            />
+                            <Legend
+                              iconType="circle"
+                              wrapperStyle={{ fontSize: 11, fontWeight: 600 }}
+                              formatter={(value) =>
+                                localizeString(value, language)
+                              }
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    );
+                  })
+                )}
+                {!isLoading && corpKraPies.length === 0 && (
+                  <div className="col-span-full text-center py-12 text-slate-400 text-sm">
+                    {t("डेटा उपलब्ध नाही", "No corporation data available")}
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+          </>
+        )}
+
+        {activeDashboardTab === "comparative" && (
+          <>
+            <SectionCard>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-lg shadow-md">
+                  🧭
+                </span>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-800">
+                    {t("तुलनात्मक फिल्टर", "Comparative Filters")}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {t(
+                      "स्तर, मेट्रिक आणि कालावधी निवडा",
+                      "Select level, metric, and time range",
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("तुलना स्तर", "Comparison Level")}
+                  </label>
+                  <select
+                    value={comparativeFilters.level}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        level: e.target.value,
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    {COMPARATIVE_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>
+                        {t(level.mr, level.en)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("मेट्रिक", "Metric")}
+                  </label>
+                  <select
+                    value={comparativeFilters.metric}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        metric: e.target.value,
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    {COMPARATIVE_METRICS.map((metric) => (
+                      <option key={metric.value} value={metric.value}>
+                        {t(metric.mr, metric.en)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("कालावधी", "Time Range")}
+                  </label>
+                  <select
+                    value={comparativeFilters.timeRange}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        timeRange: e.target.value,
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    {COMPARATIVE_TIME_RANGES.map((range) => (
+                      <option key={range.value} value={range.value}>
+                        {t(range.mr, range.en)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("टॉप मर्यादा", "Top Limit")}
+                  </label>
+                  <select
+                    value={comparativeFilters.topN}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        topN: e.target.value,
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    <option value="5">Top 5</option>
+                    <option value="10">Top 10</option>
+                  </select>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-400 mt-3 italic">
+                {t(
+                  "टीप: Region/Circle/Division निवडल्यास वरच्या hierarchy फिल्टर्स लागू होतात.",
+                  "Note: Region/Circle/Division selections respect the hierarchy filters above.",
+                )}
+              </p>
+            </SectionCard>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <SectionCard className="lg:col-span-2">
+                <div className="flex items-center justify-between gap-3 mb-5">
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-800">
+                      {t("कामगिरी तुलना", "Performance Comparison")}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {t(
+                        "निवडलेल्या मेट्रिकनुसार टॉप परफॉर्मर्स",
+                        "Top performers by selected metric",
+                      )}
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+                    {comparativeData?.period?.currentLabel ||
+                      t("चालू", "Current")}
+                  </span>
+                </div>
+
+                {isComparativeLoading ? (
+                  <ChartLoadingState />
+                ) : (comparativeData?.topPerformers || []).length === 0 ? (
+                  <ChartEmptyState
+                    title={t(
+                      "तुलनात्मक डेटा उपलब्ध नाही",
+                      "No comparative data available",
+                    )}
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    {comparativeNonZeroCount <
+                      (comparativeData?.topPerformers || []).length && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                        {t(
+                          "निवडलेल्या कालावधीत काही महामंडळांची नोंद ० आहे. अधिक संपूर्ण तुलना पाहण्यासाठी Year निवडा.",
+                          "Some entities are 0 in the selected window. Choose Year for a fuller comparison.",
+                        )}
+                      </div>
+                    )}
+
+                    <ResponsiveContainer
+                      width="100%"
+                      height={comparativeChartHeight}
+                    >
+                      <BarChart
+                        data={comparativeRows}
+                        layout="vertical"
+                        margin={{ top: 16, right: 30, left: 8, bottom: 6 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          horizontal={false}
+                          stroke="#e2e8f0"
+                        />
+                        <XAxis
+                          type="number"
+                          tick={{
+                            fill: "#94a3b8",
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                          axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          width={210}
+                          tick={{
+                            fill: "#64748b",
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                          tickFormatter={(value) =>
+                            truncateAxisLabel(value, 26)
+                          }
+                          axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                          tickLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "12px",
+                            border: "none",
+                            boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                            fontSize: 12,
+                          }}
+                          formatter={(v) => [
+                            formatComparativeValue(
+                              v,
+                              comparativeFilters.metric,
+                            ),
+                            t("मेट्रिक मूल्य", "Metric Value"),
+                          ]}
+                          labelFormatter={(label) => String(label || "")}
+                        />
+                        <Bar dataKey="metricValue" radius={[0, 8, 8, 0]}>
+                          <LabelList
+                            dataKey="metricValue"
+                            position="right"
+                            formatter={(value) =>
+                              formatComparativeValue(
+                                value,
+                                comparativeFilters.metric,
+                              )
+                            }
+                            style={{
+                              fill: "#334155",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          />
+                          {comparativeRows.map((row, idx) => {
+                            const tone =
+                              idx === 0
+                                ? "#f59e0b"
+                                : idx === 1
+                                  ? "#94a3b8"
+                                  : idx === 2
+                                    ? "#d97706"
+                                    : "#6366f1";
+                            return (
+                              <Cell key={row.entityId || idx} fill={tone} />
+                            );
+                          })}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </SectionCard>
+
+              <SectionCard>
+                <h3 className="text-lg font-extrabold text-slate-800 mb-4">
+                  {t("इनसाइट्स", "Insights")}
+                </h3>
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                    <p className="text-[11px] uppercase tracking-wider text-emerald-700 font-bold">
+                      {t("🔥 उभरता परफॉर्मर", "🔥 Rising Performer")}
+                    </p>
+                    <p className="text-sm font-bold text-slate-800 mt-1">
+                      {comparativeData?.risingPerformer?.name ||
+                        t("उपलब्ध नाही", "Not available")}
+                    </p>
+                    <p className="text-xs text-emerald-700 font-semibold mt-1">
+                      {comparativeData?.risingPerformer
+                        ? `${trendSymbol("up")}${formatComparativeValue(comparativeData.risingPerformer.metricDelta, comparativeFilters.metric)}`
+                        : "-"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3">
+                    <p className="text-[11px] uppercase tracking-wider text-rose-700 font-bold">
+                      {t("⚠️ लक्ष देणे आवश्यक", "⚠️ Needs Attention")}
+                    </p>
+                    <p className="text-sm font-bold text-slate-800 mt-1">
+                      {comparativeData?.needsAttention?.name ||
+                        t("उपलब्ध नाही", "Not available")}
+                    </p>
+                    <p className="text-xs text-rose-700 font-semibold mt-1">
+                      {comparativeData?.needsAttention
+                        ? formatComparativeValue(
+                            comparativeData.needsAttention.metricValue,
+                            comparativeFilters.metric,
+                          )
+                        : "-"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">
+                      {t("मेट्रिक", "Metric")}
+                    </p>
+                    <p className="text-sm font-bold text-slate-800 mt-1">
+                      {t(
+                        getComparativeMetricConfig(comparativeFilters.metric)
+                          .mr,
+                        getComparativeMetricConfig(comparativeFilters.metric)
+                          .en,
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {t("तुलना कालावधी", "Comparison Window")}:{" "}
+                      {comparativeData?.period?.currentLabel || "-"}
+                    </p>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+
+            <SectionCard className="overflow-hidden">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <h3 className="text-lg font-extrabold text-slate-800">
+                  {t("लीडरबोर्ड", "Leaderboard")}
+                </h3>
+                <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+                  {t("एकूण", "Total")}:{" "}
+                  {Number(comparativeData?.totalCount || 0).toLocaleString(
+                    "en-IN",
+                  )}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-slate-50 to-slate-100">
+                      <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {t("रँक", "Rank")}
+                      </th>
+                      <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {t("नाव", "Name")}
+                      </th>
+                      <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {t("मूल्य", "Value")}
+                      </th>
+                      <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {t("कल", "Trend")}
+                      </th>
+                      <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {t("प्रगती", "Progress")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(comparativeData?.leaderboard || []).map((row, idx) => {
+                      const completion = clampPercent(
+                        row?.completionPercentage,
+                      );
+                      return (
+                        <tr
+                          key={row.entityId || idx}
+                          className={
+                            idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                          }
+                        >
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center justify-center min-w-8 h-8 rounded-full text-xs font-extrabold ${
+                                row.rank === 1
+                                  ? "bg-amber-100 text-amber-700"
+                                  : row.rank === 2
+                                    ? "bg-slate-200 text-slate-700"
+                                    : row.rank === 3
+                                      ? "bg-orange-100 text-orange-700"
+                                      : "bg-indigo-100 text-indigo-700"
+                              }`}
+                            >
+                              {row.rank === 1
+                                ? "🥇"
+                                : row.rank === 2
+                                  ? "🥈"
+                                  : row.rank === 3
+                                    ? "🥉"
+                                    : row.rank}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-700">
+                            {row.name}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-bold text-slate-800">
+                            {formatComparativeValue(
+                              row.metricValue,
+                              comparativeFilters.metric,
+                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${trendBadgeClass(row.trendDirection)}`}
+                            >
+                              {trendSymbol(row.trendDirection)}
+                              {formatComparativeValue(
+                                Math.abs(row.metricDelta || 0),
+                                comparativeFilters.metric,
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 min-w-[220px]">
+                            <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  completion >= 70
+                                    ? "bg-emerald-500"
+                                    : completion >= 40
+                                      ? "bg-amber-500"
+                                      : "bg-rose-500"
+                                }`}
+                                style={{
+                                  width: `${Math.min(completion, 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                              {t("पूर्णता", "Completion")}:{" "}
+                              {completion.toFixed(1)}%
+                            </p>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(comparativeData?.leaderboard || []).length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="text-center py-8 text-slate-400 text-sm"
+                        >
+                          {t(
+                            "निवडलेल्या फिल्टरसाठी डेटा उपलब्ध नाही",
+                            "No data available for selected filters",
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          </>
+        )}
       </div>
     </div>
   );

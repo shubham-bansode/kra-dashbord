@@ -181,6 +181,10 @@ export const dashboardApi = {
     const params = new URLSearchParams(filters).toString();
     return api.get(`/dashboard/corp-kra-performance${params ? `?${params}` : ''}`);
   },
+  getComparativeAnalysis: (filters = {}) => {
+    const params = new URLSearchParams(filters).toString();
+    return api.get(`/dashboard/comparative-analysis${params ? `?${params}` : ''}`);
+  },
   exportExcel: (filters = {}) => {
     const params = new URLSearchParams(filters).toString();
     return api.get(`/dashboard/export/excel${params ? `?${params}` : ''}`, {
