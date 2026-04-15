@@ -11,7 +11,7 @@ const HomePage = () => {
 
   const handleCardClick = (path) => {
     if (!token && (path === "/data-entry" || path === "/dashboard")) {
-      navigate("/auth");
+      navigate("/auth?tab=login");
     } else {
       navigate(path);
     }
@@ -86,7 +86,6 @@ const HomePage = () => {
               )}
             </p>
           </div>
-
         </div>
       </section>
 

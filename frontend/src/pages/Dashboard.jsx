@@ -191,43 +191,11 @@ const normalizeKraRows = (rows = []) =>
   }));
 
 const COMPARATIVE_LEVELS = [
+  { value: "all", mr: "सर्व", en: "All" },
   { value: "corporation", mr: "महामंडळ", en: "Corporation" },
   { value: "region", mr: "विभाग", en: "Region" },
   { value: "circle", mr: "मंडळ", en: "Circle" },
   { value: "division", mr: "उपविभाग", en: "Division" },
-];
-
-const COMPARATIVE_METRICS = [
-  {
-    value: "completionPercentage",
-    mr: "पूर्णता %",
-    en: "Completion %",
-    suffix: "%",
-  },
-  {
-    value: "totalAchievement",
-    mr: "एकूण साध्य",
-    en: "Total Achievement",
-    suffix: "",
-  },
-  {
-    value: "totalEntries",
-    mr: "एकूण नोंदी",
-    en: "Total Entries",
-    suffix: "",
-  },
-  {
-    value: "efficiencyScore",
-    mr: "कार्यक्षमता गुण",
-    en: "Efficiency Score",
-    suffix: "%",
-  },
-  {
-    value: "totalTarget",
-    mr: "एकूण लक्ष्य",
-    en: "Total Target",
-    suffix: "",
-  },
 ];
 
 const COMPARATIVE_TIME_RANGES = [
@@ -236,9 +204,34 @@ const COMPARATIVE_TIME_RANGES = [
   { value: "year", mr: "वर्ष", en: "Year" },
 ];
 
-const getComparativeMetricConfig = (metric) =>
-  COMPARATIVE_METRICS.find((item) => item.value === metric) ||
-  COMPARATIVE_METRICS[0];
+const COMPARATIVE_MONTHS = [
+  { value: "1", mr: "जानेवारी", en: "January" },
+  { value: "2", mr: "फेब्रुवारी", en: "February" },
+  { value: "3", mr: "मार्च", en: "March" },
+  { value: "4", mr: "एप्रिल", en: "April" },
+  { value: "5", mr: "मे", en: "May" },
+  { value: "6", mr: "जून", en: "June" },
+  { value: "7", mr: "जुलै", en: "July" },
+  { value: "8", mr: "ऑगस्ट", en: "August" },
+  { value: "9", mr: "सप्टेंबर", en: "September" },
+  { value: "10", mr: "ऑक्टोबर", en: "October" },
+  { value: "11", mr: "नोव्हेंबर", en: "November" },
+  { value: "12", mr: "डिसेंबर", en: "December" },
+];
+
+const COMPARATIVE_QUARTERS = [
+  { value: "1", mr: "Q1 (एप्रिल-जून)", en: "Q1 (Apr-Jun)" },
+  { value: "2", mr: "Q2 (जुलै-सप्टेंबर)", en: "Q2 (Jul-Sep)" },
+  { value: "3", mr: "Q3 (ऑक्टोबर-डिसेंबर)", en: "Q3 (Oct-Dec)" },
+  { value: "4", mr: "Q4 (जानेवारी-मार्च)", en: "Q4 (Jan-Mar)" },
+];
+
+const COMPARATIVE_PERFORMER_OPTIONS = [
+  { value: "top-5", en: "Top 5" },
+  { value: "top-10", en: "Top 10" },
+  { value: "bottom-5", en: "Bottom 5" },
+  { value: "bottom-10", en: "Bottom 10" },
+];
 
 const formatComparativeValue = (value, metric) => {
   const n = Number(value || 0);
@@ -248,22 +241,6 @@ const formatComparativeValue = (value, metric) => {
   }
   if (metric === "totalEntries") return n.toLocaleString("en-IN");
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-};
-
-const trendBadgeClass = (trendDirection) => {
-  if (trendDirection === "up") {
-    return "text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200";
-  }
-  if (trendDirection === "down") {
-    return "text-rose-700 bg-rose-50 ring-1 ring-rose-200";
-  }
-  return "text-slate-500 bg-slate-100 ring-1 ring-slate-200";
-};
-
-const trendSymbol = (trendDirection) => {
-  if (trendDirection === "up") return "↑";
-  if (trendDirection === "down") return "↓";
-  return "→";
 };
 
 const truncateAxisLabel = (label, maxLen = 24) => {
@@ -427,16 +404,20 @@ export default function Dashboard() {
   });
 
   const [comparativeFilters, setComparativeFilters] = useState({
-    level: "corporation",
+    level: "all",
     metric: "completionPercentage",
     timeRange: "year",
+    month: "",
+    quarter: "",
+    sortOrder: "top",
     topN: "5",
   });
 
   const [comparativeData, setComparativeData] = useState({
-    level: "corporation",
+    level: "all",
     metric: "completionPercentage",
     timeRange: "year",
+    sortOrder: "top",
     period: null,
     topN: 5,
     page: 1,
@@ -1005,18 +986,40 @@ export default function Dashboard() {
     setIsComparativeLoading(true);
     try {
       const filterParams = {};
+      const effectiveFiscalStartYear = effectiveFyStart;
 
       filterParams.level = comparativeFilters.level;
-      filterParams.metric = comparativeFilters.metric;
+      filterParams.metric = "completionPercentage";
       filterParams.timeRange = comparativeFilters.timeRange;
+      filterParams.sortOrder = comparativeFilters.sortOrder;
       filterParams.topN = comparativeFilters.topN;
+
+      if (
+        comparativeFilters.timeRange === "month" &&
+        comparativeFilters.month
+      ) {
+        filterParams.month = comparativeFilters.month;
+        filterParams.year =
+          Number(comparativeFilters.month) >= 4
+            ? effectiveFiscalStartYear
+            : effectiveFiscalStartYear + 1;
+      }
+
+      if (
+        comparativeFilters.timeRange === "quarter" &&
+        comparativeFilters.quarter
+      ) {
+        filterParams.quarter = comparativeFilters.quarter;
+        filterParams.year = effectiveFiscalStartYear;
+      }
 
       const res = await dashboardApi.getComparativeAnalysis(filterParams);
       setComparativeData(
         res?.data?.data || {
           level: comparativeFilters.level,
-          metric: comparativeFilters.metric,
+          metric: "completionPercentage",
           timeRange: comparativeFilters.timeRange,
+          sortOrder: comparativeFilters.sortOrder,
           period: null,
           topN: Number(comparativeFilters.topN || 5),
           page: 1,
@@ -2268,15 +2271,12 @@ export default function Dashboard() {
                     {t("तुलनात्मक फिल्टर", "Comparative Filters")}
                   </h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    {t(
-                      "स्तर, मेट्रिक आणि कालावधी निवडा",
-                      "Select level, metric, and time range",
-                    )}
+                    {t("स्तर व कालावधी निवडा", "Select level and time range")}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
                     {t("तुलना स्तर", "Comparison Level")}
@@ -2301,29 +2301,7 @@ export default function Dashboard() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t("मेट्रिक", "Metric")}
-                  </label>
-                  <select
-                    value={comparativeFilters.metric}
-                    onChange={(e) =>
-                      setComparativeFilters((prev) => ({
-                        ...prev,
-                        metric: e.target.value,
-                      }))
-                    }
-                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
-                  >
-                    {COMPARATIVE_METRICS.map((metric) => (
-                      <option key={metric.value} value={metric.value}>
-                        {t(metric.mr, metric.en)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t("कालावधी", "Time Range")}
+                    {t("KRA वारंवारता", "KRA Frequency")}
                   </label>
                   <select
                     value={comparativeFilters.timeRange}
@@ -2331,6 +2309,9 @@ export default function Dashboard() {
                       setComparativeFilters((prev) => ({
                         ...prev,
                         timeRange: e.target.value,
+                        month: e.target.value === "month" ? prev.month : "",
+                        quarter:
+                          e.target.value === "quarter" ? prev.quarter : "",
                       }))
                     }
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
@@ -2345,43 +2326,92 @@ export default function Dashboard() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t("टॉप मर्यादा", "Top Limit")}
+                    {t("KRA परफॉर्मर्स", "KRA Performers")}
                   </label>
                   <select
-                    value={comparativeFilters.topN}
+                    value={`${comparativeFilters.sortOrder}-${comparativeFilters.topN}`}
                     onChange={(e) =>
                       setComparativeFilters((prev) => ({
                         ...prev,
-                        topN: e.target.value,
+                        sortOrder: e.target.value.startsWith("bottom")
+                          ? "bottom"
+                          : "top",
+                        topN: e.target.value.endsWith("10") ? "10" : "5",
                       }))
                     }
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
                   >
-                    <option value="5">Top 5</option>
-                    <option value="10">Top 10</option>
+                    {COMPARATIVE_PERFORMER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.en}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("महिना", "Month")}
+                  </label>
+                  <select
+                    value={comparativeFilters.month}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        timeRange: "month",
+                        month: e.target.value,
+                        quarter: "",
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {COMPARATIVE_MONTHS.map((month) => (
+                      <option key={month.value} value={month.value}>
+                        {t(month.mr, month.en)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("तिमाही", "Quarter")}
+                  </label>
+                  <select
+                    value={comparativeFilters.quarter}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        timeRange: "quarter",
+                        quarter: e.target.value,
+                        month: "",
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {COMPARATIVE_QUARTERS.map((quarter) => (
+                      <option key={quarter.value} value={quarter.value}>
+                        {t(quarter.mr, quarter.en)}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
-
-              <p className="text-xs text-slate-400 mt-3 italic">
-                {t(
-                  "टीप: Region/Circle/Division निवडल्यास वरच्या hierarchy फिल्टर्स लागू होतात.",
-                  "Note: Region/Circle/Division selections respect the hierarchy filters above.",
-                )}
-              </p>
             </SectionCard>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <SectionCard className="lg:col-span-2">
+            <div className="grid grid-cols-1 gap-6">
+              <SectionCard>
                 <div className="flex items-center justify-between gap-3 mb-5">
                   <div>
                     <h3 className="text-lg font-extrabold text-slate-800">
-                      {t("कामगिरी तुलना", "Performance Comparison")}
+                      {t("KRA परफॉर्मर तुलना", "KRA Performer Comparision")}
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
                       {t(
-                        "निवडलेल्या मेट्रिकनुसार टॉप परफॉर्मर्स",
-                        "Top performers by selected metric",
+                        "निवडलेल्या पूर्णता टक्केवारीनुसार परफॉर्मर्स",
+                        "Performers by selected completion percentage",
                       )}
                     </p>
                   </div>
@@ -2502,70 +2532,12 @@ export default function Dashboard() {
                   </div>
                 )}
               </SectionCard>
-
-              <SectionCard>
-                <h3 className="text-lg font-extrabold text-slate-800 mb-4">
-                  {t("इनसाइट्स", "Insights")}
-                </h3>
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
-                    <p className="text-[11px] uppercase tracking-wider text-emerald-700 font-bold">
-                      {t("🔥 उभरता परफॉर्मर", "🔥 Rising Performer")}
-                    </p>
-                    <p className="text-sm font-bold text-slate-800 mt-1">
-                      {comparativeData?.risingPerformer?.name ||
-                        t("उपलब्ध नाही", "Not available")}
-                    </p>
-                    <p className="text-xs text-emerald-700 font-semibold mt-1">
-                      {comparativeData?.risingPerformer
-                        ? `${trendSymbol("up")}${formatComparativeValue(comparativeData.risingPerformer.metricDelta, comparativeFilters.metric)}`
-                        : "-"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3">
-                    <p className="text-[11px] uppercase tracking-wider text-rose-700 font-bold">
-                      {t("⚠️ लक्ष देणे आवश्यक", "⚠️ Needs Attention")}
-                    </p>
-                    <p className="text-sm font-bold text-slate-800 mt-1">
-                      {comparativeData?.needsAttention?.name ||
-                        t("उपलब्ध नाही", "Not available")}
-                    </p>
-                    <p className="text-xs text-rose-700 font-semibold mt-1">
-                      {comparativeData?.needsAttention
-                        ? formatComparativeValue(
-                            comparativeData.needsAttention.metricValue,
-                            comparativeFilters.metric,
-                          )
-                        : "-"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                    <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">
-                      {t("मेट्रिक", "Metric")}
-                    </p>
-                    <p className="text-sm font-bold text-slate-800 mt-1">
-                      {t(
-                        getComparativeMetricConfig(comparativeFilters.metric)
-                          .mr,
-                        getComparativeMetricConfig(comparativeFilters.metric)
-                          .en,
-                      )}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {t("तुलना कालावधी", "Comparison Window")}:{" "}
-                      {comparativeData?.period?.currentLabel || "-"}
-                    </p>
-                  </div>
-                </div>
-              </SectionCard>
             </div>
 
             <SectionCard className="overflow-hidden">
               <div className="flex items-center justify-between gap-3 mb-5">
                 <h3 className="text-lg font-extrabold text-slate-800">
-                  {t("लीडरबोर्ड", "Leaderboard")}
+                  {t("KRA परफॉर्मन्स तक्ता", "KRA Performace in table form")}
                 </h3>
                 <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
                   {t("एकूण", "Total")}:{" "}
@@ -2583,13 +2555,10 @@ export default function Dashboard() {
                         {t("रँक", "Rank")}
                       </th>
                       <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        {t("नाव", "Name")}
+                        {t("कार्यालयाचे नाव", "Name of Office")}
                       </th>
                       <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        {t("मूल्य", "Value")}
-                      </th>
-                      <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        {t("कल", "Trend")}
+                        {t("KRA साध्य", "KRA Achivement")}
                       </th>
                       <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                         {t("प्रगती", "Progress")}
@@ -2638,17 +2607,6 @@ export default function Dashboard() {
                               comparativeFilters.metric,
                             )}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${trendBadgeClass(row.trendDirection)}`}
-                            >
-                              {trendSymbol(row.trendDirection)}
-                              {formatComparativeValue(
-                                Math.abs(row.metricDelta || 0),
-                                comparativeFilters.metric,
-                              )}
-                            </span>
-                          </td>
                           <td className="px-4 py-3 min-w-[220px]">
                             <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                               <div
@@ -2675,7 +2633,7 @@ export default function Dashboard() {
                     {(comparativeData?.leaderboard || []).length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={4}
                           className="text-center py-8 text-slate-400 text-sm"
                         >
                           {t(

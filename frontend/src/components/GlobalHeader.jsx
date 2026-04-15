@@ -26,7 +26,7 @@ const GlobalHeader = () => {
   const handleNavClick = (path) => {
     setMobileMenuOpen(false);
     if (!token && (path === "/data-entry" || path === "/dashboard")) {
-      navigate("/auth");
+      navigate("/auth?tab=login");
     } else {
       navigate(path);
     }
@@ -195,7 +195,7 @@ const GlobalHeader = () => {
               ) : (
                 /* Single Login Button */
                 <button
-                  onClick={() => navigate("/auth")}
+                  onClick={() => navigate("/auth?tab=login")}
                   className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 text-base font-semibold rounded-lg hover:bg-blue-50 transition-all shadow-sm"
                 >
                   <svg

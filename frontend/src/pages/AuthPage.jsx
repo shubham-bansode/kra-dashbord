@@ -23,6 +23,9 @@ export default function AuthPage() {
 
   // Determine initial tab from URL state or path
   const getInitialTab = () => {
+    const queryTab = new URLSearchParams(location.search).get("tab");
+    if (queryTab === "admin") return "admin";
+    if (queryTab === "login") return "login";
     if (location.state?.tab === "admin") return "admin";
     return "login";
   };

@@ -72,6 +72,17 @@ function previousPeriod(period) {
 
 function getGrouping(query) {
   const groupByRaw = String(query.groupBy || '').toLowerCase();
+  if (groupByRaw === 'all') {
+    return {
+      groupBy: 'all',
+      entityField: null,
+      snapshotNameField: null,
+      idField: null,
+      ensureNonNull: false,
+      lookup: null,
+      namePath: null
+    };
+  }
   if (groupByRaw === 'corporation') {
     return {
       groupBy: 'corporation',
@@ -256,6 +267,10 @@ async function backfillCorporationNamesFromDivisionSnapshots(rows, grouping) {
 async function getScopedEntitiesForGrouping(grouping, baseMatch = {}) {
   const g = grouping?.groupBy;
 
+  if (g === 'all') {
+    return [{ _id: 'all', name: 'All Corporations (Average)' }];
+  }
+
   if (g === 'corporation') {
     const filter = {};
     if (baseMatch?.corporation) filter._id = baseMatch.corporation;
@@ -377,6 +392,12 @@ function normalizeComparativeMetric(rawMetric) {
       return 'completionpercentage';
 }
 
+    function normalizeComparativeSortOrder(rawOrder) {
+      const order = String(rawOrder || '').trim().toLowerCase();
+      if (order === 'bottom') return 'bottom';
+      return 'top';
+    }
+
     function normalizeTimeRange(rawRange) {
       const value = String(rawRange || '').trim().toLowerCase();
       if (value === 'quarter') return 'quarter';
@@ -391,26 +412,69 @@ function normalizeComparativeMetric(rawMetric) {
 
     function quarterForMonth(month) {
       const m = Number(month || 1);
-      if (m >= 1 && m <= 3) return 1;
-      if (m >= 4 && m <= 6) return 2;
-      if (m >= 7 && m <= 9) return 3;
+      if (m >= 4 && m <= 6) return 1;
+      if (m >= 7 && m <= 9) return 2;
+      if (m >= 10 && m <= 12) return 3;
       return 4;
     }
 
-    function quarterBounds(year, quarter) {
+    function fiscalYearStartForMonth(year, month) {
+      const y = Number(year || 0);
+      const m = Number(month || 1);
+      if (!Number.isFinite(y)) return null;
+      return m >= 4 ? y : y - 1;
+    }
+
+    function quarterBounds(fiscalYearStart, quarter) {
+      const fy = Number(fiscalYearStart || 0);
       const q = Number(quarter || 1);
-      const startMonth = q === 1 ? 1 : q === 2 ? 4 : q === 3 ? 7 : 10;
+
+      if (q === 1) {
+        return {
+          fiscalYearStart: fy,
+          quarter: q,
+          year: fy,
+          startMonth: 4,
+          endMonth: 6,
+          label: `Q1 (Apr-Jun) FY ${fy}-${String(fy + 1).slice(-2)}`
+        };
+      }
+
+      if (q === 2) {
+        return {
+          fiscalYearStart: fy,
+          quarter: q,
+          year: fy,
+          startMonth: 7,
+          endMonth: 9,
+          label: `Q2 (Jul-Sep) FY ${fy}-${String(fy + 1).slice(-2)}`
+        };
+      }
+
+      if (q === 3) {
+        return {
+          fiscalYearStart: fy,
+          quarter: q,
+          year: fy,
+          startMonth: 10,
+          endMonth: 12,
+          label: `Q3 (Oct-Dec) FY ${fy}-${String(fy + 1).slice(-2)}`
+        };
+      }
+
       return {
-        year,
-        quarter: q,
-        startMonth,
-        endMonth: startMonth + 2
+        fiscalYearStart: fy,
+        quarter: 4,
+        year: fy + 1,
+        startMonth: 1,
+        endMonth: 3,
+        label: `Q4 (Jan-Mar) FY ${fy}-${String(fy + 1).slice(-2)}`
       };
     }
 
-    function previousQuarterBounds(year, quarter) {
-      if (quarter > 1) return quarterBounds(year, quarter - 1);
-      return quarterBounds(year - 1, 4);
+    function previousQuarterBounds(fiscalYearStart, quarter) {
+      if (quarter > 1) return quarterBounds(fiscalYearStart, quarter - 1);
+      return quarterBounds(fiscalYearStart - 1, 4);
     }
 
     function comparativeMetricValue(row, metric) {
@@ -431,6 +495,8 @@ function normalizeComparativeMetric(rawMetric) {
       baseMatch,
       anchor,
       timeRange,
+      quarter,
+      quarterYear,
       hasExplicitPeriod = false
     }) {
       const range = normalizeTimeRange(timeRange);
@@ -465,9 +531,19 @@ function normalizeComparativeMetric(rawMetric) {
       }
 
       if (range === 'quarter') {
-        const q = quarterForMonth(anchor.month);
-        const currentQuarter = quarterBounds(anchor.year, q);
-        const previousQuarter = previousQuarterBounds(currentQuarter.year, currentQuarter.quarter);
+        const explicitQuarter = Number(quarter || 0);
+        const hasExplicitQuarter = Number.isFinite(explicitQuarter) && explicitQuarter >= 1 && explicitQuarter <= 4;
+
+        const currentFiscalYearStart = hasExplicitQuarter
+          ? Number(quarterYear || fiscalYearStartForMonth(anchor.year, anchor.month))
+          : fiscalYearStartForMonth(anchor.year, anchor.month);
+
+        const currentQuarterNumber = hasExplicitQuarter
+          ? explicitQuarter
+          : quarterForMonth(anchor.month);
+
+        const currentQuarter = quarterBounds(currentFiscalYearStart, currentQuarterNumber);
+        const previousQuarter = previousQuarterBounds(currentQuarter.fiscalYearStart, currentQuarter.quarter);
 
         const currentMonths = [currentQuarter.startMonth, currentQuarter.startMonth + 1, currentQuarter.endMonth];
         const previousMonths = [previousQuarter.startMonth, previousQuarter.startMonth + 1, previousQuarter.endMonth];
@@ -483,8 +559,8 @@ function normalizeComparativeMetric(rawMetric) {
             achievementYear: previousQuarter.year,
             achievementMonth: { $in: previousMonths }
           },
-          currentLabel: `Q${currentQuarter.quarter} ${currentQuarter.year}`,
-          previousLabel: `Q${previousQuarter.quarter} ${previousQuarter.year}`
+          currentLabel: currentQuarter.label,
+          previousLabel: previousQuarter.label
         };
       }
 
@@ -508,6 +584,75 @@ function normalizeComparativeMetric(rawMetric) {
     }
 
     async function aggregateComparativeRows({ match, grouping, kraId }) {
+      if (grouping?.groupBy === 'all') {
+        const corpRows = await KraMonthlyEntry.aggregate([
+          { $match: match },
+          { $match: { corporation: { $ne: null } } },
+          ...buildKraUnwindPipeline({ baseMatch: {}, kraId }),
+          {
+            $group: {
+              _id: '$corporation',
+              totalAchievement: { $sum: achievementExpr() },
+              totalTarget: { $sum: targetExpr() },
+              submissionIds: { $addToSet: '$_id' }
+            }
+          },
+          {
+            $addFields: {
+              completionPercentage: percentageProject({
+                achievementField: '$totalAchievement',
+                targetField: '$totalTarget'
+              }),
+              totalEntries: { $size: '$submissionIds' }
+            }
+          }
+        ]);
+
+        if (!corpRows.length) {
+          return [
+            {
+              _id: 'all',
+              name: 'All Corporations (Average)',
+              totalAchievement: 0,
+              totalTarget: 0,
+              totalEntries: 0,
+              completionPercentage: 0,
+              efficiencyScore: 0
+            }
+          ];
+        }
+
+        const totalAchievement = corpRows.reduce(
+          (sum, row) => sum + Number(row?.totalAchievement || 0),
+          0
+        );
+        const totalTarget = corpRows.reduce(
+          (sum, row) => sum + Number(row?.totalTarget || 0),
+          0
+        );
+        const totalEntries = corpRows.reduce(
+          (sum, row) => sum + Number(row?.totalEntries || 0),
+          0
+        );
+        const completionPercentage =
+          corpRows.reduce(
+            (sum, row) => sum + Number(row?.completionPercentage || 0),
+            0
+          ) / corpRows.length;
+
+        return [
+          {
+            _id: 'all',
+            name: 'All Corporations (Average)',
+            totalAchievement: Math.round(totalAchievement * 100) / 100,
+            totalTarget: Math.round(totalTarget * 100) / 100,
+            totalEntries,
+            completionPercentage: Math.round(completionPercentage * 100) / 100,
+            efficiencyScore: 0
+          }
+        ];
+      }
+
       const rawRows = await KraMonthlyEntry.aggregate([
         { $match: match },
         ...getEntityPresenceMatchStage(grouping),
@@ -615,6 +760,7 @@ function normalizeComparativeMetric(rawMetric) {
         const grouping = getGrouping({ groupBy: level });
         const metric = normalizeComparativeMetric(req.query.metric);
         const timeRange = normalizeTimeRange(req.query.timeRange);
+        const sortOrder = normalizeComparativeSortOrder(req.query.sortOrder);
 
         const topN = Math.min(Math.max(toInt(req.query.topN) || 5, 1), 50);
         const page = Math.max(toInt(req.query.page) || 1, 1);
@@ -652,6 +798,8 @@ function normalizeComparativeMetric(rawMetric) {
           baseMatch,
           anchor,
           timeRange,
+          quarter: req.query.quarter,
+          quarterYear: req.query.year,
           hasExplicitPeriod
         });
 
@@ -726,9 +874,21 @@ function normalizeComparativeMetric(rawMetric) {
             };
           });
 
+        const orderedRows = sortOrder === 'bottom'
+          ? [...rankedRows].sort((a, b) => {
+              if (a.metricValue !== b.metricValue) return a.metricValue - b.metricValue;
+              return String(a.name).localeCompare(String(b.name));
+            })
+          : rankedRows;
+
+        const finalRankedRows = orderedRows.map((row, idx) => ({
+          ...row,
+          rank: idx + 1
+        }));
+
         const start = (page - 1) * perPage;
-        const leaderboard = rankedRows.slice(start, start + perPage);
-        const topPerformers = rankedRows.slice(0, topN);
+        const leaderboard = finalRankedRows.slice(start, start + perPage);
+        const topPerformers = finalRankedRows.slice(0, topN);
 
         const risingPerformer =
           [...rankedRows]
@@ -743,6 +903,7 @@ function normalizeComparativeMetric(rawMetric) {
             level: grouping.groupBy,
             metric,
             timeRange,
+            sortOrder,
             period: {
               anchor,
               currentLabel: range.currentLabel,
@@ -751,7 +912,7 @@ function normalizeComparativeMetric(rawMetric) {
             topN,
             page,
             perPage,
-            totalCount: rankedRows.length,
+            totalCount: finalRankedRows.length,
             topPerformers,
             leaderboard,
             risingPerformer,
