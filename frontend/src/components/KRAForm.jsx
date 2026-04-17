@@ -164,7 +164,8 @@ const KRAForm = () => {
   const userFullName = user?.fullName || "";
   const isCorporationLocked = isScopedUser && Boolean(userCorporationId);
   const isRegionLocked =
-    isScopedUser && ["region", "circle", "division"].includes(userHierarchyLevel);
+    isScopedUser &&
+    ["region", "circle", "division"].includes(userHierarchyLevel);
   const isCircleLocked =
     isScopedUser && ["circle", "division"].includes(userHierarchyLevel);
   const isDivisionLocked = isScopedUser && userHierarchyLevel === "division";
@@ -363,7 +364,14 @@ const KRAForm = () => {
 
   // Pre-fill locked user fields
   useEffect(() => {
-    if (!userCorporationId && !userMobileNumber && !userRegionId && !userCircleId && !userDivisionId) return;
+    if (
+      !userCorporationId &&
+      !userMobileNumber &&
+      !userRegionId &&
+      !userCircleId &&
+      !userDivisionId
+    )
+      return;
 
     setFormData((prev) => {
       const next = { ...prev };
@@ -378,7 +386,13 @@ const KRAForm = () => {
       }
       return next;
     });
-  }, [userCorporationId, userMobileNumber, userRegionId, userCircleId, userDivisionId]);
+  }, [
+    userCorporationId,
+    userMobileNumber,
+    userRegionId,
+    userCircleId,
+    userDivisionId,
+  ]);
 
   // Fetch regions when corporation changes
   useEffect(() => {
@@ -480,7 +494,9 @@ const KRAForm = () => {
   useEffect(() => {
     if (!userDivisionId || !divisions.length) return;
     if (formData.division) return;
-    const found = divisions.some((d) => String(d._id) === String(userDivisionId));
+    const found = divisions.some(
+      (d) => String(d._id) === String(userDivisionId),
+    );
     if (found) {
       setFormData((prev) => ({ ...prev, division: userDivisionId }));
     }
@@ -1479,8 +1495,8 @@ const KRAForm = () => {
                 </div>
               </div>
 
-              {/* Year, Month, Date */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+              {/* Year, Month */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                 <div>
                   <label htmlFor="kraYear" className="form-label">
                     {t("KRA वर्ष", "KRA Year")}
@@ -1555,32 +1571,6 @@ const KRAForm = () => {
                     </p>
                   )}
                 </div>
-
-                <div>
-                  <label htmlFor="achievementDate" className="form-label">
-                    {t("उपलब्धी तारीख", "Achievement Date")}
-                    <span className="required-star">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    id="achievementDate"
-                    name="achievementDate"
-                    value={formData.achievementDate}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    disabled={true}
-                    className={`form-input bg-gray-100 cursor-not-allowed ${errors.achievementDate && touched.achievementDate ? "input-error" : ""}`}
-                    title={t(
-                      "तारीख महिन्याच्या शेवटच्या दिवशी स्वयंचलितपणे सेट होते",
-                      "Date is auto-set to the last day of the month",
-                    )}
-                  />
-                  {errors.achievementDate && touched.achievementDate && (
-                    <p className="form-error">
-                      <ErrorIcon /> {errors.achievementDate}
-                    </p>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -1615,8 +1605,8 @@ const KRAForm = () => {
               ) : !formData.achievementDate ? (
                 <div className="text-center py-8 text-gray-500">
                   <InfoIcon />
-                  <p className="mt-2">कृपया उपलब्धी तारीख निवडा</p>
-                  <p className="text-sm">Please select Achievement Date</p>
+                  <p className="mt-2">कृपया KRA महिना निवडा</p>
+                  <p className="text-sm">Please select KRA Month</p>
                 </div>
               ) : displayKras.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">

@@ -13,11 +13,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
   LabelList,
 } from "recharts";
 import {
@@ -106,7 +101,7 @@ const toSafeNumber = (value, fallback = 0) => {
 const clampPercent = (value) => {
   const n = toSafeNumber(value, 0);
   if (n < 0) return 0;
-  if (n > 200) return 200;
+  if (n > 100) return 100;
   return n;
 };
 
@@ -168,15 +163,14 @@ const normalizeTrendRows = (rows = []) =>
   (Array.isArray(rows) ? rows : []).map((d) => {
     const achievement = toSafeNumber(d?.totalAchievement);
     const target = toSafeNumber(d?.totalTarget);
-    const entriesCount = toSafeNumber(d?.count);
     return {
       ...d,
       totalAchievement: achievement,
       totalTarget: target,
-      entriesCount,
       label: `${d?.monthName || "M"} ${d?.year || ""}`.trim(),
-      achievementPct:
+      achievementPct: clampPercent(
         target > 0 ? Math.round((achievement / target) * 100 * 100) / 100 : 0,
+      ),
     };
   });
 
@@ -198,34 +192,6 @@ const COMPARATIVE_LEVELS = [
   { value: "division", mr: "उपविभाग", en: "Division" },
 ];
 
-const COMPARATIVE_TIME_RANGES = [
-  { value: "month", mr: "महिना", en: "Month" },
-  { value: "quarter", mr: "तिमाही", en: "Quarter" },
-  { value: "year", mr: "वर्ष", en: "Year" },
-];
-
-const COMPARATIVE_MONTHS = [
-  { value: "1", mr: "जानेवारी", en: "January" },
-  { value: "2", mr: "फेब्रुवारी", en: "February" },
-  { value: "3", mr: "मार्च", en: "March" },
-  { value: "4", mr: "एप्रिल", en: "April" },
-  { value: "5", mr: "मे", en: "May" },
-  { value: "6", mr: "जून", en: "June" },
-  { value: "7", mr: "जुलै", en: "July" },
-  { value: "8", mr: "ऑगस्ट", en: "August" },
-  { value: "9", mr: "सप्टेंबर", en: "September" },
-  { value: "10", mr: "ऑक्टोबर", en: "October" },
-  { value: "11", mr: "नोव्हेंबर", en: "November" },
-  { value: "12", mr: "डिसेंबर", en: "December" },
-];
-
-const COMPARATIVE_QUARTERS = [
-  { value: "1", mr: "Q1 (एप्रिल-जून)", en: "Q1 (Apr-Jun)" },
-  { value: "2", mr: "Q2 (जुलै-सप्टेंबर)", en: "Q2 (Jul-Sep)" },
-  { value: "3", mr: "Q3 (ऑक्टोबर-डिसेंबर)", en: "Q3 (Oct-Dec)" },
-  { value: "4", mr: "Q4 (जानेवारी-मार्च)", en: "Q4 (Jan-Mar)" },
-];
-
 const COMPARATIVE_PERFORMER_OPTIONS = [
   { value: "top-5", en: "Top 5" },
   { value: "top-10", en: "Top 10" },
@@ -234,13 +200,49 @@ const COMPARATIVE_PERFORMER_OPTIONS = [
 ];
 
 const formatComparativeValue = (value, metric) => {
-  const n = Number(value || 0);
+  const raw = Number(value || 0);
+  const n =
+    metric === "completionPercentage" || metric === "efficiencyScore"
+      ? clampPercent(raw)
+      : raw;
   if (!Number.isFinite(n)) return "0";
   if (metric === "completionPercentage" || metric === "efficiencyScore") {
     return `${n.toFixed(1)}%`;
   }
   if (metric === "totalEntries") return n.toLocaleString("en-IN");
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+};
+
+const normalizeComparativePayload = (payload) => {
+  const data = payload || {};
+  const metric = data?.metric || "completionPercentage";
+  const isPercentMetric =
+    metric === "completionPercentage" || metric === "efficiencyScore";
+
+  const normalizeRow = (row = {}) => ({
+    ...row,
+    metricValue: isPercentMetric
+      ? clampPercent(row?.metricValue)
+      : toSafeNumber(row?.metricValue),
+    completionPercentage: clampPercent(row?.completionPercentage),
+  });
+
+  return {
+    ...data,
+    topPerformers: (Array.isArray(data?.topPerformers)
+      ? data.topPerformers
+      : []
+    ).map(normalizeRow),
+    leaderboard: (Array.isArray(data?.leaderboard) ? data.leaderboard : []).map(
+      normalizeRow,
+    ),
+    risingPerformer: data?.risingPerformer
+      ? normalizeRow(data.risingPerformer)
+      : null,
+    needsAttention: data?.needsAttention
+      ? normalizeRow(data.needsAttention)
+      : null,
+  };
 };
 
 const truncateAxisLabel = (label, maxLen = 24) => {
@@ -406,9 +408,7 @@ export default function Dashboard() {
   const [comparativeFilters, setComparativeFilters] = useState({
     level: "all",
     metric: "completionPercentage",
-    timeRange: "year",
-    month: "",
-    quarter: "",
+    year: "",
     sortOrder: "top",
     topN: "5",
   });
@@ -561,6 +561,14 @@ export default function Dashboard() {
   const effectiveFyStart = selectedFyStart || getCurrentFyStartYear();
   const currentFyLabel = formatFyLabel(effectiveFyStart);
   const previousFyLabel = formatFyLabel(effectiveFyStart - 1);
+  const currentComparativeFyLabel = formatFyLabel(getCurrentFyStartYear());
+
+  useEffect(() => {
+    setComparativeFilters((prev) => {
+      if (prev.year) return prev;
+      return { ...prev, year: currentComparativeFyLabel };
+    });
+  }, [currentComparativeFyLabel]);
 
   const handleEntityDrillDown = async (row) => {
     const groupBy = getGroupByForSelection();
@@ -772,6 +780,7 @@ export default function Dashboard() {
         (r) => ({
           ...r,
           name: toCleanLabel(r?.name),
+          previousMonthPercentage: clampPercent(r?.previousMonthPercentage),
           currentMonthPercentage: clampPercent(r?.currentMonthPercentage),
         }),
       );
@@ -801,7 +810,12 @@ export default function Dashboard() {
         Number.isFinite(Number(summaryData?.totalTarget));
 
       if (hasValidSummary) {
-        setSummary(summaryData);
+        setSummary({
+          ...summaryData,
+          achievementPercentage: clampPercent(
+            summaryData?.achievementPercentage,
+          ),
+        });
       } else {
         const fallbackTotals = rawEntries.reduce(
           (acc, doc) => {
@@ -830,7 +844,7 @@ export default function Dashboard() {
           totalAchievement:
             Math.round(fallbackTotals.totalAchievement * 100) / 100,
           totalTarget: Math.round(fallbackTotals.totalTarget * 100) / 100,
-          achievementPercentage: fallbackAchPct,
+          achievementPercentage: clampPercent(fallbackAchPct),
         });
       }
 
@@ -878,24 +892,9 @@ export default function Dashboard() {
         })),
       );
 
-      // Monthly trend with month-wise percentage share of entries.
+      // Monthly trend with month-wise achievement percentage.
       const trendRows = normalizeTrendRows(trendRaw);
-      const totalEntriesAcrossMonths = trendRows.reduce(
-        (sum, row) => sum + toSafeNumber(row?.entriesCount),
-        0,
-      );
-      const trendWithPercentage = trendRows.map((row) => ({
-        ...row,
-        entriesPercentage:
-          totalEntriesAcrossMonths > 0
-            ? Math.round(
-                (toSafeNumber(row?.entriesCount) / totalEntriesAcrossMonths) *
-                  100 *
-                  100,
-              ) / 100
-            : 0,
-      }));
-      setMonthlyTrend(trendWithPercentage);
+      setMonthlyTrend(trendRows);
 
       // KRA-wise achievement
       setKraWiseData(normalizeKraRows(kraWiseRaw));
@@ -986,50 +985,38 @@ export default function Dashboard() {
     setIsComparativeLoading(true);
     try {
       const filterParams = {};
-      const effectiveFiscalStartYear = effectiveFyStart;
+      const selectedComparativeYearStart = getFyStartYear(
+        comparativeFilters.year,
+      );
+      const comparativeYearStart =
+        selectedComparativeYearStart || getCurrentFyStartYear();
 
       filterParams.level = comparativeFilters.level;
       filterParams.metric = "completionPercentage";
-      filterParams.timeRange = comparativeFilters.timeRange;
+      filterParams.timeRange = "year";
+      filterParams.year = comparativeYearStart;
       filterParams.sortOrder = comparativeFilters.sortOrder;
       filterParams.topN = comparativeFilters.topN;
 
-      if (
-        comparativeFilters.timeRange === "month" &&
-        comparativeFilters.month
-      ) {
-        filterParams.month = comparativeFilters.month;
-        filterParams.year =
-          Number(comparativeFilters.month) >= 4
-            ? effectiveFiscalStartYear
-            : effectiveFiscalStartYear + 1;
-      }
-
-      if (
-        comparativeFilters.timeRange === "quarter" &&
-        comparativeFilters.quarter
-      ) {
-        filterParams.quarter = comparativeFilters.quarter;
-        filterParams.year = effectiveFiscalStartYear;
-      }
-
       const res = await dashboardApi.getComparativeAnalysis(filterParams);
       setComparativeData(
-        res?.data?.data || {
-          level: comparativeFilters.level,
-          metric: "completionPercentage",
-          timeRange: comparativeFilters.timeRange,
-          sortOrder: comparativeFilters.sortOrder,
-          period: null,
-          topN: Number(comparativeFilters.topN || 5),
-          page: 1,
-          perPage: Number(comparativeFilters.topN || 5),
-          totalCount: 0,
-          topPerformers: [],
-          leaderboard: [],
-          risingPerformer: null,
-          needsAttention: null,
-        },
+        normalizeComparativePayload(
+          res?.data?.data || {
+            level: comparativeFilters.level,
+            metric: "completionPercentage",
+            timeRange: "year",
+            sortOrder: comparativeFilters.sortOrder,
+            period: null,
+            topN: Number(comparativeFilters.topN || 5),
+            page: 1,
+            perPage: Number(comparativeFilters.topN || 5),
+            totalCount: 0,
+            topPerformers: [],
+            leaderboard: [],
+            risingPerformer: null,
+            needsAttention: null,
+          },
+        ),
       );
     } catch (error) {
       console.error("Error fetching comparative analysis:", error);
@@ -1064,6 +1051,11 @@ export default function Dashboard() {
     ...bottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
   );
   const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
+  const monthlyTrendMax = Math.max(
+    100,
+    ...monthlyTrend.map((x) => toSafeNumber(x.achievementPct, 0)),
+  );
+  const monthlyTrendYDomainMax = Math.ceil(monthlyTrendMax / 10) * 10;
   const comparativeRows = comparativeData?.topPerformers || [];
   const comparativeChartHeight = Math.max(340, comparativeRows.length * 46);
 
@@ -1087,7 +1079,7 @@ export default function Dashboard() {
               <p className="mt-2 text-indigo-100 font-medium text-sm md:text-base">
                 {t(
                   "केआरए डॅशबोर्ड - डेटा विश्लेषण आणि अहवाल",
-                  "Executive Performance & Analytics Overview",
+                  "KRA Performance Performance & Analytics Overview",
                 )}
               </p>
             </div>
@@ -1347,7 +1339,7 @@ export default function Dashboard() {
                   </span>
                   <div>
                     <h3 className="text-lg font-extrabold text-slate-800">
-                      {t("एकूण टॉप परफॉर्मर्स", "Over All Top Performers")}
+                      {t("एकूण टॉप परफॉर्मर्स", "KRA Ranking Top Performer")}
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
                       {getEntityLabel()}{" "}
@@ -1474,7 +1466,10 @@ export default function Dashboard() {
                   </span>
                   <div>
                     <h3 className="text-lg font-extrabold text-slate-800">
-                      {t("एकूण बॉटम परफॉर्मर्स", "Over All Bottom Performers")}
+                      {t(
+                        "एकूण बॉटम परफॉर्मर्स",
+                        "KRA Ranking Bottom Performer",
+                      )}
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
                       {getEntityLabel()}{" "}
@@ -1594,415 +1589,8 @@ export default function Dashboard() {
               </SectionCard>
             </div>
 
-            {/* ═══════ MONTHLY TREND LINE CHART ═══════ */}
-            <SectionCard>
-              <div className="flex items-center gap-3 mb-5">
-                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
-                  📈
-                </span>
-                <div>
-                  <h3 className="text-lg font-extrabold text-slate-800">
-                    {t("महिनानिहाय KRA कल", "Month Wise KRA Trends")}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-medium">
-                    {t(
-                      "महिन्यानुसार नोंदी टक्केवारीचा कल",
-                      "Month-wise entries percentage trend",
-                    )}
-                  </p>
-                </div>
-              </div>
-              {isLoading ? (
-                <ChartLoadingState />
-              ) : monthlyTrend.length > 0 ? (
-                <ResponsiveContainer width="100%" height={350}>
-                  <LineChart
-                    data={monthlyTrend}
-                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis
-                      type="category"
-                      dataKey="label"
-                      tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
-                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      type="number"
-                      domain={[0, 100]}
-                      tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: "12px",
-                        border: "none",
-                        boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
-                        fontSize: 13,
-                      }}
-                      formatter={(v, _name, props) => {
-                        const count = Number(props?.payload?.entriesCount || 0);
-                        return [
-                          `${Number(v || 0).toFixed(2)}% (${count.toLocaleString("en-IN")} ${t("नोंदी", "entries")})`,
-                          t("नोंदी टक्केवारी", "Entries %"),
-                        ];
-                      }}
-                    />
-                    <Legend
-                      iconType="circle"
-                      wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                      formatter={() => t("नोंदी टक्केवारी", "Entries %")}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="entriesPercentage"
-                      name={t("नोंदी टक्केवारी", "Entries %")}
-                      stroke="#6366f1"
-                      strokeWidth={3}
-                      dot={{
-                        r: 5,
-                        fill: "#6366f1",
-                        stroke: "#fff",
-                        strokeWidth: 2,
-                      }}
-                      activeDot={{
-                        r: 7,
-                        fill: "#fff",
-                        stroke: "#6366f1",
-                        strokeWidth: 2,
-                      }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <ChartEmptyState
-                  title={t("डेटा उपलब्ध नाही", "No trend data available")}
-                />
-              )}
-            </SectionCard>
-
-            {/* ═══════ KRA ACHIEVEMENT RADAR + PROGRESS BARS ═══════ */}
-            {kraWiseData.length > 0 && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Radar Chart */}
-                <SectionCard>
-                  <div className="flex items-center gap-3 mb-5">
-                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white flex items-center justify-center text-lg shadow-md">
-                      🕸️
-                    </span>
-                    <div>
-                      <h3 className="text-lg font-extrabold text-slate-800">
-                        {t("KRA कामगिरी रडार", "KRA Performance Radar")}
-                      </h3>
-                      <p className="text-xs text-slate-400 font-medium">
-                        {t(
-                          "सर्व KRA चा तुलनात्मक दृश्य",
-                          "Comparative view across all KRAs",
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <ResponsiveContainer width="100%" height={350}>
-                    <RadarChart
-                      data={kraWiseData.map((k) => ({
-                        ...k,
-                        displayName: localizeString(
-                          k.kraName || `KRA ${k.kraId}`,
-                          language,
-                        ),
-                        achievementPct: Number(k.achievementPercentage) || 0,
-                      }))}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius="75%"
-                    >
-                      <PolarGrid stroke="#e2e8f0" />
-                      <PolarAngleAxis
-                        dataKey="displayName"
-                        tick={{
-                          fill: "#64748b",
-                          fontSize: 10,
-                          fontWeight: 600,
-                        }}
-                      />
-                      <PolarRadiusAxis
-                        angle={90}
-                        domain={[0, 100]}
-                        tick={{ fill: "#94a3b8", fontSize: 10 }}
-                      />
-                      <Radar
-                        name={t("साध्य %", "Achievement %")}
-                        dataKey="achievementPct"
-                        stroke="#8b5cf6"
-                        fill="#8b5cf6"
-                        fillOpacity={0.25}
-                        strokeWidth={2}
-                        dot={{
-                          r: 4,
-                          fill: "#8b5cf6",
-                          stroke: "#fff",
-                          strokeWidth: 2,
-                        }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "12px",
-                          border: "none",
-                          boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                          fontSize: 12,
-                        }}
-                        formatter={(v) => [
-                          `${Number(v || 0).toFixed(1)}%`,
-                          t("साध्य %", "Achievement %"),
-                        ]}
-                      />
-                      <Legend
-                        iconType="circle"
-                        wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
-                      />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </SectionCard>
-
-                {/* KRA Progress Bars */}
-                <SectionCard>
-                  <div className="flex items-center gap-3 mb-5">
-                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-lg shadow-md">
-                      📊
-                    </span>
-                    <div>
-                      <h3 className="text-lg font-extrabold text-slate-800">
-                        {t("KRA निहाय प्रगती", "KRA-wise Progress")}
-                      </h3>
-                      <p className="text-xs text-slate-400 font-medium">
-                        {t(
-                          "प्रत्येक KRA ची साध्य स्थिती",
-                          "Achievement status of each KRA",
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    {kraWiseData.map((kra, idx) => {
-                      const pct = Math.min(
-                        Number(kra.achievementPercentage) || 0,
-                        100,
-                      );
-                      const progressColors = [
-                        "from-indigo-500 to-blue-500",
-                        "from-amber-500 to-orange-500",
-                        "from-emerald-500 to-teal-500",
-                        "from-rose-500 to-pink-500",
-                        "from-violet-500 to-purple-500",
-                        "from-cyan-500 to-sky-500",
-                        "from-fuchsia-500 to-pink-500",
-                      ];
-                      const bgColors = [
-                        "bg-indigo-100",
-                        "bg-amber-100",
-                        "bg-emerald-100",
-                        "bg-rose-100",
-                        "bg-violet-100",
-                        "bg-cyan-100",
-                        "bg-fuchsia-100",
-                      ];
-                      const textColors = [
-                        "text-indigo-700",
-                        "text-amber-700",
-                        "text-emerald-700",
-                        "text-rose-700",
-                        "text-violet-700",
-                        "text-cyan-700",
-                        "text-fuchsia-700",
-                      ];
-                      const colorIdx = idx % progressColors.length;
-                      return (
-                        <div key={kra.kraId || idx}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-sm font-bold text-slate-700 truncate max-w-[65%]">
-                              {localizeString(
-                                kra.kraName || `KRA ${kra.kraId}`,
-                                language,
-                              )}
-                            </span>
-                            <span
-                              className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${bgColors[colorIdx]} ${textColors[colorIdx]}`}
-                            >
-                              {(Number(kra.achievementPercentage) || 0).toFixed(
-                                1,
-                              )}
-                              %
-                            </span>
-                          </div>
-                          <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className={`absolute inset-y-0 left-0 bg-gradient-to-r ${progressColors[colorIdx]} rounded-full transition-all duration-700 ease-out`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
-                            <span>
-                              {t("साध्य", "Ach")}:{" "}
-                              {Number(kra.totalAchievement || 0).toFixed(1)}
-                            </span>
-                            <span>
-                              {t("लक्ष्य", "Target")}:{" "}
-                              {Number(kra.totalTarget || 0).toFixed(1)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {kraWiseData.length > 0 &&
-                      (() => {
-                        const overallAverage =
-                          kraWiseData.reduce(
-                            (sum, kra) =>
-                              sum + (Number(kra.achievementPercentage) || 0),
-                            0,
-                          ) / kraWiseData.length;
-                        const overallPct = Math.min(
-                          Number(overallAverage) || 0,
-                          100,
-                        );
-
-                        return (
-                          <div className="pt-3 mt-2 border-t border-slate-200">
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
-                                {t("एकूण साध्य", "Overall Achivments")}
-                              </span>
-                              <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
-                                {overallAverage.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-500 rounded-full transition-all duration-700 ease-out"
-                                style={{ width: `${overallPct}%` }}
-                              />
-                            </div>
-                            <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
-                              <span>{t("सरासरी %", "Average %")}</span>
-                              <span>{t("सर्व KRA", "All KRAs")}</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    {kraWiseData.length === 0 && (
-                      <p className="text-center text-slate-400 text-sm py-8">
-                        {t("डेटा उपलब्ध नाही", "No data available")}
-                      </p>
-                    )}
-                  </div>
-                </SectionCard>
-              </div>
-            )}
-
-            {/* ═══════ WEIGHTAGE PIE + LEADERBOARD ═══════ */}
+            {/* ═══════ COMPARISON + KRA PROGRESS ═══════ */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Weightage Pie */}
-              <SectionCard>
-                <div className="flex items-center gap-3 mb-5">
-                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white flex items-center justify-center text-lg shadow-md">
-                    ⚖️
-                  </span>
-                  <h3 className="text-lg font-extrabold text-slate-800">
-                    {t("KRA भारांश", "KRA Weightage Distribution")}
-                  </h3>
-                </div>
-                {isLoading ? (
-                  <ChartLoadingState />
-                ) : weightageDistribution.length === 0 ? (
-                  <ChartEmptyState
-                    title={t("डेटा उपलब्ध नाही", "No weightage data available")}
-                  />
-                ) : (
-                  <div className="space-y-4">
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={weightageDistribution}
-                          dataKey="weight"
-                          nameKey="kraName"
-                          cx="50%"
-                          cy="50%"
-                          startAngle={90}
-                          endAngle={-270}
-                          innerRadius={55}
-                          outerRadius={112}
-                          paddingAngle={3}
-                          labelLine={false}
-                          label={(d) => `${Number(d?.weight || 0).toFixed(0)}%`}
-                          stroke="none"
-                        >
-                          {weightageDistribution.map((_, index) => (
-                            <Cell
-                              key={`wc-${index}`}
-                              fill={getKraColor(weightageDistribution[index])}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: "12px",
-                            border: "none",
-                            boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                            fontSize: 12,
-                          }}
-                          formatter={(v, _n, props) => {
-                            const name = localizeString(
-                              props?.payload?.kraName || "",
-                              language,
-                            );
-                            return [
-                              `${Number(v || 0).toFixed(2)}%`,
-                              name || t("KRA", "KRA"),
-                            ];
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                        {t("KRA तपशील", "KRA Details")}
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                        {weightageDistribution.map((item, index) => (
-                          <div
-                            key={`weight-legend-${item?.kraId || index}`}
-                            className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
-                            title={localizeString(
-                              item?.kraName || "",
-                              language,
-                            )}
-                          >
-                            <span
-                              className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
-                              style={{
-                                backgroundColor: getKraColor(item),
-                              }}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
-                                {localizeString(item?.kraName || "-", language)}
-                              </p>
-                              <p className="text-[11px] font-bold text-slate-500 mt-0.5">
-                                {Number(item?.weight || 0).toFixed(2)}%
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </SectionCard>
-
               {/* Leaderboard */}
               <SectionCard className="overflow-hidden">
                 <div className="flex items-center gap-3 mb-5">
@@ -2126,7 +1714,323 @@ export default function Dashboard() {
                   </table>
                 </div>
               </SectionCard>
+
+              {/* KRA Progress Bars */}
+              <SectionCard>
+                <div className="flex items-center gap-3 mb-5">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-lg shadow-md">
+                    📊
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-800">
+                      {t("KRA निहाय प्रगती", "KRA-wise Progress")}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {t(
+                        "प्रत्येक KRA ची साध्य स्थिती",
+                        "Achievement status of each KRA",
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {kraWiseData.map((kra, idx) => {
+                    const pct = Math.min(
+                      Number(kra.achievementPercentage) || 0,
+                      100,
+                    );
+                    const progressColors = [
+                      "from-indigo-500 to-blue-500",
+                      "from-amber-500 to-orange-500",
+                      "from-emerald-500 to-teal-500",
+                      "from-rose-500 to-pink-500",
+                      "from-violet-500 to-purple-500",
+                      "from-cyan-500 to-sky-500",
+                      "from-fuchsia-500 to-pink-500",
+                    ];
+                    const bgColors = [
+                      "bg-indigo-100",
+                      "bg-amber-100",
+                      "bg-emerald-100",
+                      "bg-rose-100",
+                      "bg-violet-100",
+                      "bg-cyan-100",
+                      "bg-fuchsia-100",
+                    ];
+                    const textColors = [
+                      "text-indigo-700",
+                      "text-amber-700",
+                      "text-emerald-700",
+                      "text-rose-700",
+                      "text-violet-700",
+                      "text-cyan-700",
+                      "text-fuchsia-700",
+                    ];
+                    const colorIdx = idx % progressColors.length;
+                    return (
+                      <div key={kra.kraId || idx}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-bold text-slate-700 truncate max-w-[65%]">
+                            {localizeString(
+                              kra.kraName || `KRA ${kra.kraId}`,
+                              language,
+                            )}
+                          </span>
+                          <span
+                            className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${bgColors[colorIdx]} ${textColors[colorIdx]}`}
+                          >
+                            {(Number(kra.achievementPercentage) || 0).toFixed(
+                              1,
+                            )}
+                            %
+                          </span>
+                        </div>
+                        <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`absolute inset-y-0 left-0 bg-gradient-to-r ${progressColors[colorIdx]} rounded-full transition-all duration-700 ease-out`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
+                          <span>
+                            {t("साध्य", "Ach")}:{" "}
+                            {Number(kra.totalAchievement || 0).toFixed(1)}
+                          </span>
+                          <span>
+                            {t("लक्ष्य", "Target")}:{" "}
+                            {Number(kra.totalTarget || 0).toFixed(1)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {kraWiseData.length > 0 &&
+                    (() => {
+                      const overallAverage =
+                        kraWiseData.reduce(
+                          (sum, kra) =>
+                            sum + (Number(kra.achievementPercentage) || 0),
+                          0,
+                        ) / kraWiseData.length;
+                      const overallPct = Math.min(
+                        Number(overallAverage) || 0,
+                        100,
+                      );
+
+                      return (
+                        <div className="pt-3 mt-2 border-t border-slate-200">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-sm font-extrabold text-slate-800 truncate max-w-[65%]">
+                              {t("एकूण साध्य", "Overall Achivments")}
+                            </span>
+                            <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
+                              {overallAverage.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="absolute inset-y-0 left-0 bg-gradient-to-r from-slate-700 to-slate-500 rounded-full transition-all duration-700 ease-out"
+                              style={{ width: `${overallPct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-medium">
+                            <span>{t("सरासरी %", "Average %")}</span>
+                            <span>{t("सर्व KRA", "All KRAs")}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  {kraWiseData.length === 0 && (
+                    <p className="text-center text-slate-400 text-sm py-8">
+                      {t("डेटा उपलब्ध नाही", "No data available")}
+                    </p>
+                  )}
+                </div>
+              </SectionCard>
             </div>
+
+            {/* ═══════ MONTHLY TREND LINE CHART ═══════ */}
+            <SectionCard>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-lg shadow-md">
+                  📈
+                </span>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-800">
+                    {t("महिनानिहाय KRA कल", "Month Wise KRA Trends")}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {t(
+                      "महिन्यानुसार साध्य टक्केवारीचा कल",
+                      "Month-wise achievement percentage trend",
+                    )}
+                  </p>
+                </div>
+              </div>
+              {isLoading ? (
+                <ChartLoadingState />
+              ) : monthlyTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height={350}>
+                  <LineChart
+                    data={monthlyTrend}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      type="category"
+                      dataKey="label"
+                      tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="number"
+                      domain={[0, monthlyTrendYDomainMax]}
+                      tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: "12px",
+                        border: "none",
+                        boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                        fontSize: 13,
+                      }}
+                      formatter={(v) => [
+                        `${Number(v || 0).toFixed(2)}%`,
+                        t("साध्य टक्केवारी", "Achievement %"),
+                      ]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
+                      formatter={() => t("साध्य टक्केवारी", "Achievement %")}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="achievementPct"
+                      name={t("साध्य टक्केवारी", "Achievement %")}
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      dot={{
+                        r: 5,
+                        fill: "#6366f1",
+                        stroke: "#fff",
+                        strokeWidth: 2,
+                      }}
+                      activeDot={{
+                        r: 7,
+                        fill: "#fff",
+                        stroke: "#6366f1",
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <ChartEmptyState
+                  title={t("डेटा उपलब्ध नाही", "No trend data available")}
+                />
+              )}
+            </SectionCard>
+
+            {/* ═══════ WEIGHTAGE PIE ═══════ */}
+            <SectionCard>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white flex items-center justify-center text-lg shadow-md">
+                  ⚖️
+                </span>
+                <h3 className="text-lg font-extrabold text-slate-800">
+                  {t("KRA भारांश", "KRA Weightage Distribution")}
+                </h3>
+              </div>
+              {isLoading ? (
+                <ChartLoadingState />
+              ) : weightageDistribution.length === 0 ? (
+                <ChartEmptyState
+                  title={t("डेटा उपलब्ध नाही", "No weightage data available")}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={weightageDistribution}
+                        dataKey="weight"
+                        nameKey="kraName"
+                        cx="50%"
+                        cy="50%"
+                        startAngle={90}
+                        endAngle={-270}
+                        innerRadius={55}
+                        outerRadius={112}
+                        paddingAngle={3}
+                        labelLine={false}
+                        label={(d) => `${Number(d?.weight || 0).toFixed(0)}%`}
+                        stroke="none"
+                      >
+                        {weightageDistribution.map((_, index) => (
+                          <Cell
+                            key={`wc-${index}`}
+                            fill={getKraColor(weightageDistribution[index])}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "none",
+                          boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                          fontSize: 12,
+                        }}
+                        formatter={(v, _n, props) => {
+                          const name = localizeString(
+                            props?.payload?.kraName || "",
+                            language,
+                          );
+                          return [
+                            `${Number(v || 0).toFixed(2)}%`,
+                            name || t("KRA", "KRA"),
+                          ];
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                      {t("KRA तपशील", "KRA Details")}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
+                      {weightageDistribution.map((item, index) => (
+                        <div
+                          key={`weight-legend-${item?.kraId || index}`}
+                          className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
+                          title={localizeString(item?.kraName || "", language)}
+                        >
+                          <span
+                            className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                            style={{
+                              backgroundColor: getKraColor(item),
+                            }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
+                              {localizeString(item?.kraName || "-", language)}
+                            </p>
+                            <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                              {Number(item?.weight || 0).toFixed(2)}%
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
 
             {/* ═══════ CORPORATION-WISE PIE CHARTS ═══════ */}
             <SectionCard className="relative overflow-hidden">
@@ -2276,7 +2180,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
                     {t("तुलना स्तर", "Comparison Level")}
@@ -2301,24 +2205,21 @@ export default function Dashboard() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t("KRA वारंवारता", "KRA Frequency")}
+                    {t("वर्ष", "Year")}
                   </label>
                   <select
-                    value={comparativeFilters.timeRange}
+                    value={comparativeFilters.year}
                     onChange={(e) =>
                       setComparativeFilters((prev) => ({
                         ...prev,
-                        timeRange: e.target.value,
-                        month: e.target.value === "month" ? prev.month : "",
-                        quarter:
-                          e.target.value === "quarter" ? prev.quarter : "",
+                        year: e.target.value,
                       }))
                     }
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
                   >
-                    {COMPARATIVE_TIME_RANGES.map((range) => (
-                      <option key={range.value} value={range.value}>
-                        {t(range.mr, range.en)}
+                    {kraYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
                       </option>
                     ))}
                   </select>
@@ -2349,55 +2250,6 @@ export default function Dashboard() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t("महिना", "Month")}
-                  </label>
-                  <select
-                    value={comparativeFilters.month}
-                    onChange={(e) =>
-                      setComparativeFilters((prev) => ({
-                        ...prev,
-                        timeRange: "month",
-                        month: e.target.value,
-                        quarter: "",
-                      }))
-                    }
-                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
-                  >
-                    <option value="">{t("सर्व", "All")}</option>
-                    {COMPARATIVE_MONTHS.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {t(month.mr, month.en)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    {t("तिमाही", "Quarter")}
-                  </label>
-                  <select
-                    value={comparativeFilters.quarter}
-                    onChange={(e) =>
-                      setComparativeFilters((prev) => ({
-                        ...prev,
-                        timeRange: "quarter",
-                        quarter: e.target.value,
-                        month: "",
-                      }))
-                    }
-                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
-                  >
-                    <option value="">{t("सर्व", "All")}</option>
-                    {COMPARATIVE_QUARTERS.map((quarter) => (
-                      <option key={quarter.value} value={quarter.value}>
-                        {t(quarter.mr, quarter.en)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
             </SectionCard>
 
