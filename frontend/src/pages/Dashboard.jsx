@@ -711,9 +711,12 @@ export default function Dashboard() {
 
       const groupBy = getGroupByForSelection();
 
-      // For IDC-wise pies, we intentionally ignore region/circle/division.
+      // Pie section should respect selected hierarchy filters as well.
       const corpPieParams = {};
       if (filters.corporation) corpPieParams.corporation = filters.corporation;
+      if (filters.region) corpPieParams.region = filters.region;
+      if (filters.circle) corpPieParams.circle = filters.circle;
+      if (filters.division) corpPieParams.division = filters.division;
       if (filters.kraYear) corpPieParams.kraYear = filters.kraYear;
       if (!filters.period) corpPieParams.periodMode = "all";
       if (month) corpPieParams.month = String(month);
@@ -1134,6 +1137,37 @@ export default function Dashboard() {
       displayWeight: capPercentage(slice?.weight),
     })),
   }));
+
+  const pieScopeGroup = getGroupByForSelection();
+  const pieScopeTitle =
+    pieScopeGroup === "division"
+      ? t("उपविभागनिहाय KRA कामगिरी", "Division-wise KRA Performance")
+      : pieScopeGroup === "circle"
+        ? t("मंडळनिहाय KRA कामगिरी", "Circle-wise KRA Performance")
+        : pieScopeGroup === "region"
+          ? t("विभागनिहाय KRA कामगिरी", "Region-wise KRA Performance")
+          : t("महामंडळनिहाय KRA कामगिरी", "Corporation-wise KRA Performance");
+
+  const pieScopeSubtitle =
+    pieScopeGroup === "division"
+      ? t(
+          "निवडलेल्या मंडळातील उपविभागांसाठी KRA स्कोअर शेअर पाई चार्ट.",
+          "Score share breakdown across divisions in selected circle.",
+        )
+      : pieScopeGroup === "circle"
+        ? t(
+            "निवडलेल्या विभागातील मंडळांसाठी KRA स्कोअर शेअर पाई चार्ट.",
+            "Score share breakdown across circles in selected region.",
+          )
+        : pieScopeGroup === "region"
+          ? t(
+              "निवडलेल्या महामंडळातील विभागांसाठी KRA स्कोअर शेअर पाई चार्ट.",
+              "Score share breakdown across regions in selected corporation.",
+            )
+          : t(
+              "प्रत्येक महामंडळासाठी KRA स्कोअर शेअर पाई चार्ट.",
+              "Score share breakdown per corporation.",
+            );
 
   const isComparativePercentMetric =
     comparativeFilters.metric === "completionPercentage" ||
@@ -2119,16 +2153,10 @@ export default function Dashboard() {
                 </span>
                 <div>
                   <h3 className="text-xl font-extrabold text-slate-800">
-                    {t(
-                      "महामंडळनिहाय KRA कामगिरी",
-                      "Corporation-wise KRA Performance",
-                    )}
+                    {pieScopeTitle}
                   </h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    {t(
-                      "प्रत्येक महामंडळासाठी KRA स्कोअर शेअर पाई चार्ट.",
-                      "Score share breakdown per corporation.",
-                    )}
+                    {pieScopeSubtitle}
                   </p>
                 </div>
               </div>
@@ -2230,7 +2258,7 @@ export default function Dashboard() {
                 )}
                 {!isLoading && corpKraPies.length === 0 && (
                   <div className="col-span-full text-center py-12 text-slate-400 text-sm">
-                    {t("डेटा उपलब्ध नाही", "No corporation data available")}
+                    {t("डेटा उपलब्ध नाही", "No pie-chart data available")}
                   </div>
                 )}
               </div>

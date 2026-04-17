@@ -1324,8 +1324,37 @@ router.get('/corp-kra-performance', async (req, res) => {
   try {
     const match = {};
     const corporationId = toObjectId(req.query.corporation);
+    const regionId = toObjectId(req.query.region);
+    const circleId = toObjectId(req.query.circle);
+    const divisionId = toObjectId(req.query.division);
+
     if (corporationId) match.corporation = corporationId;
-    if (req.query.kraYear) match.kraYear = String(req.query.kraYear).trim();
+    if (regionId) match.region = regionId;
+    if (circleId) match.circle = circleId;
+    if (divisionId) match.division = divisionId;
+
+    if (req.query.kraYear) {
+      const variants = expandKraYearVariants(req.query.kraYear);
+      match.kraYear = variants.length > 1 ? { $in: variants } : variants[0];
+    }
+
+    // Keep pie grouping behavior aligned with bar chart drill-down.
+    // No corporation selected -> corporation-wise
+    // Corporation selected -> region-wise
+    // Region selected -> circle-wise
+    // Circle selected -> division-wise
+    let hierarchyLevel = 'corporation';
+    if (corporationId && !regionId) hierarchyLevel = 'region';
+    if (regionId && !circleId) hierarchyLevel = 'circle';
+    if (circleId || divisionId) hierarchyLevel = 'division';
+
+    const hierarchyCollection = hierarchyLevel === 'division'
+      ? 'divisions'
+      : hierarchyLevel === 'circle'
+        ? 'circles'
+        : hierarchyLevel === 'region'
+          ? 'regions'
+          : 'corporations';
 
     const period = await resolveEffectivePeriod({
       baseMatch: match,
@@ -1345,13 +1374,14 @@ router.get('/corp-kra-performance', async (req, res) => {
       { $unwind: '$kras' },
       {
         $group: {
-          _id: { corporation: '$corporation', kraId: '$kras.kraId' },
+          _id: { entity: `$${hierarchyLevel}`, kraId: '$kras.kraId' },
           kraName: { $first: '$kras.kraName' },
           weight: { $max: { $ifNull: ['$kras.weight', 0] } },
           totalAchievement: { $sum: achievementExpr() },
           totalTarget: { $sum: targetExpr() }
         }
       },
+      { $match: { '_id.entity': { $ne: null } } },
       {
         $addFields: {
           achievementPercentage: percentageProject({
@@ -1367,7 +1397,7 @@ router.get('/corp-kra-performance', async (req, res) => {
       },
       {
         $group: {
-          _id: '$_id.corporation',
+          _id: '$_id.entity',
           totalScore: { $sum: '$score' },
           items: {
             $push: {
@@ -1382,18 +1412,19 @@ router.get('/corp-kra-performance', async (req, res) => {
       },
       {
         $lookup: {
-          from: 'corporations',
+          from: hierarchyCollection,
           localField: '_id',
           foreignField: '_id',
-          as: 'corp'
+          as: 'entity'
         }
       },
       {
         $project: {
           _id: 0,
           corporationId: '$_id',
-          corporationName: { $arrayElemAt: ['$corp.name', 0] },
-          corporationCode: { $arrayElemAt: ['$corp.code', 0] },
+          corporationName: { $arrayElemAt: ['$entity.name', 0] },
+          corporationCode: { $ifNull: [{ $arrayElemAt: ['$entity.code', 0] }, ''] },
+          hierarchyLevel: hierarchyLevel,
           period: period,
           data: {
             $map: {
@@ -1421,7 +1452,7 @@ router.get('/corp-kra-performance', async (req, res) => {
           }
         }
       },
-      { $sort: { corporationCode: 1 } }
+      { $sort: { corporationCode: 1, corporationName: 1 } }
     ]);
 
     res.json({ success: true, period, data });
