@@ -82,17 +82,6 @@ const getPercentBadgeClass = (percent) => {
   return "bg-red-100 text-red-700 ring-1 ring-red-200";
 };
 
-const downloadBlob = (blob, filename) => {
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
-};
-
 const toSafeNumber = (value, fallback = 0) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -638,54 +627,6 @@ export default function Dashboard() {
     }));
   };
 
-  const exportExcel = async () => {
-    try {
-      const filterParams = {};
-      if (filters.corporation) filterParams.corporation = filters.corporation;
-      if (filters.region) filterParams.region = filters.region;
-      if (filters.circle) filterParams.circle = filters.circle;
-      if (filters.division) filterParams.division = filters.division;
-      if (filters.kraYear) filterParams.kraYear = filters.kraYear;
-      if (filters.kra) filterParams.kra = filters.kra;
-
-      if (!filters.period) filterParams.periodMode = "all";
-      const { month, year } = parsePeriod(filters.period);
-      if (month) filterParams.month = String(month);
-      if (year) filterParams.year = String(year);
-
-      const groupBy = getGroupByForSelection();
-      const res = await dashboardApi.exportExcel({ ...filterParams, groupBy });
-      const filename = `kra-dashboard-${filters.period || "latest"}.xlsx`;
-      downloadBlob(res.data, filename);
-    } catch (error) {
-      console.error("Export Excel failed:", error);
-    }
-  };
-
-  const exportPdf = async () => {
-    try {
-      const filterParams = {};
-      if (filters.corporation) filterParams.corporation = filters.corporation;
-      if (filters.region) filterParams.region = filters.region;
-      if (filters.circle) filterParams.circle = filters.circle;
-      if (filters.division) filterParams.division = filters.division;
-      if (filters.kraYear) filterParams.kraYear = filters.kraYear;
-      if (filters.kra) filterParams.kra = filters.kra;
-
-      if (!filters.period) filterParams.periodMode = "all";
-      const { month, year } = parsePeriod(filters.period);
-      if (month) filterParams.month = String(month);
-      if (year) filterParams.year = String(year);
-
-      const groupBy = getGroupByForSelection();
-      const res = await dashboardApi.exportPdf({ ...filterParams, groupBy });
-      const filename = `kra-dashboard-${filters.period || "latest"}.pdf`;
-      downloadBlob(res.data, filename);
-    } catch (error) {
-      console.error("Export PDF failed:", error);
-    }
-  };
-
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
@@ -1177,24 +1118,7 @@ export default function Dashboard() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={exportExcel}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25 transition-all text-sm"
-              >
-                <span>📥</span> {t("एक्सेल", "Excel")}
-              </button>
-              <button
-                type="button"
-                onClick={exportPdf}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25 transition-all text-sm"
-              >
-                <span>📄</span> {t("पीडीएफ", "PDF")}
-              </button>
-            </div>
+            <div />
           </div>
         </div>
 
