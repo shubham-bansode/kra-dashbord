@@ -76,7 +76,7 @@ const SectionCard = ({ children, className = "" }) => (
 );
 
 const getPercentBadgeClass = (percent) => {
-  const p = Number(percent) || 0;
+  const p = capPercentage(percent);
   if (p > 70) return "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200";
   if (p >= 40) return "bg-amber-100 text-amber-700 ring-1 ring-amber-200";
   return "bg-red-100 text-red-700 ring-1 ring-red-200";
@@ -98,11 +98,16 @@ const toSafeNumber = (value, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-const clampPercent = (value) => {
+const capPercentage = (value) => {
   const n = toSafeNumber(value, 0);
-  if (n < 0) return 0;
-  if (n > 100) return 100;
-  return n;
+  return n > 100 ? 100 : n;
+};
+
+const formatDisplayPercentage = (value, digits = 1) =>
+  `${capPercentage(value).toFixed(digits)}%`;
+
+const clampPercent = (value) => {
+  return toSafeNumber(value, 0);
 };
 
 const toCleanLabel = (value, fallback = "") => {
@@ -168,9 +173,8 @@ const normalizeTrendRows = (rows = []) =>
       totalAchievement: achievement,
       totalTarget: target,
       label: `${d?.monthName || "M"} ${d?.year || ""}`.trim(),
-      achievementPct: clampPercent(
+      achievementPct:
         target > 0 ? Math.round((achievement / target) * 100 * 100) / 100 : 0,
-      ),
     };
   });
 
@@ -192,6 +196,28 @@ const COMPARATIVE_LEVELS = [
   { value: "division", mr: "उपविभाग", en: "Division" },
 ];
 
+const COMPARATIVE_MONTHS = [
+  { value: "6", mr: "जून", en: "June" },
+  { value: "7", mr: "जुलै", en: "July" },
+  { value: "8", mr: "ऑगस्ट", en: "August" },
+  { value: "9", mr: "सप्टेंबर", en: "September" },
+  { value: "10", mr: "ऑक्टोबर", en: "October" },
+  { value: "11", mr: "नोव्हेंबर", en: "November" },
+  { value: "12", mr: "डिसेंबर", en: "December" },
+  { value: "1", mr: "जानेवारी", en: "January" },
+  { value: "2", mr: "फेब्रुवारी", en: "February" },
+  { value: "3", mr: "मार्च", en: "March" },
+  { value: "4", mr: "एप्रिल", en: "April" },
+  { value: "5", mr: "मे", en: "May" },
+];
+
+const COMPARATIVE_QUARTERS = [
+  { value: "1", mr: "Q1 (जून-ऑगस्ट)", en: "Q1 (Jun-Aug)" },
+  { value: "2", mr: "Q2 (सप्टेंबर-नोव्हेंबर)", en: "Q2 (Sep-Nov)" },
+  { value: "3", mr: "Q3 (डिसेंबर-फेब्रुवारी)", en: "Q3 (Dec-Feb)" },
+  { value: "4", mr: "Q4 (मार्च-मे)", en: "Q4 (Mar-May)" },
+];
+
 const COMPARATIVE_PERFORMER_OPTIONS = [
   { value: "top-5", en: "Top 5" },
   { value: "top-10", en: "Top 10" },
@@ -199,50 +225,51 @@ const COMPARATIVE_PERFORMER_OPTIONS = [
   { value: "bottom-10", en: "Bottom 10" },
 ];
 
+function getFinancialYear(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+
+  if (month >= 6) {
+    return `${year}-${String(year + 1).slice(-2)}`;
+  } else {
+    return `${year - 1}-${String(year).slice(-2)}`;
+  }
+}
+
+const getFinancialYearStart = (fyLabel) => {
+  const match = String(fyLabel || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const startYear = Number(match[1]);
+  return Number.isFinite(startYear) ? startYear : null;
+};
+
+const buildFinancialYearOptions = (existing = [], currentFy) => {
+  const all = new Set(Array.isArray(existing) ? existing : []);
+  all.add(currentFy);
+
+  const currentStart = getFinancialYearStart(currentFy);
+  if (Number.isFinite(currentStart)) {
+    for (let y = currentStart - 3; y <= currentStart + 2; y += 1) {
+      all.add(`${y}-${String(y + 1).slice(-2)}`);
+    }
+  }
+
+  return [...all]
+    .filter((label) => /^\d{4}-\d{2}$/.test(String(label)))
+    .sort(
+      (a, b) =>
+        (getFinancialYearStart(b) || 0) - (getFinancialYearStart(a) || 0),
+    );
+};
+
 const formatComparativeValue = (value, metric) => {
-  const raw = Number(value || 0);
-  const n =
-    metric === "completionPercentage" || metric === "efficiencyScore"
-      ? clampPercent(raw)
-      : raw;
+  const n = Number(value || 0);
   if (!Number.isFinite(n)) return "0";
   if (metric === "completionPercentage" || metric === "efficiencyScore") {
-    return `${n.toFixed(1)}%`;
+    return formatDisplayPercentage(n, 1);
   }
   if (metric === "totalEntries") return n.toLocaleString("en-IN");
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-};
-
-const normalizeComparativePayload = (payload) => {
-  const data = payload || {};
-  const metric = data?.metric || "completionPercentage";
-  const isPercentMetric =
-    metric === "completionPercentage" || metric === "efficiencyScore";
-
-  const normalizeRow = (row = {}) => ({
-    ...row,
-    metricValue: isPercentMetric
-      ? clampPercent(row?.metricValue)
-      : toSafeNumber(row?.metricValue),
-    completionPercentage: clampPercent(row?.completionPercentage),
-  });
-
-  return {
-    ...data,
-    topPerformers: (Array.isArray(data?.topPerformers)
-      ? data.topPerformers
-      : []
-    ).map(normalizeRow),
-    leaderboard: (Array.isArray(data?.leaderboard) ? data.leaderboard : []).map(
-      normalizeRow,
-    ),
-    risingPerformer: data?.risingPerformer
-      ? normalizeRow(data.risingPerformer)
-      : null,
-    needsAttention: data?.needsAttention
-      ? normalizeRow(data.needsAttention)
-      : null,
-  };
 };
 
 const truncateAxisLabel = (label, maxLen = 24) => {
@@ -261,8 +288,12 @@ const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
     const index = Number(props?.index);
     if (placements.has(index)) return placements.get(index);
 
-    const value = Number(
-      props?.slicePercentage ?? Number(props?.percent || 0) * 100,
+    const value = capPercentage(
+      Number(
+        props?.displaySlicePercentage ??
+          props?.slicePercentage ??
+          Number(props?.percent || 0) * 100,
+      ),
     );
     const cx = Number(props?.cx);
     const cy = Number(props?.cy);
@@ -373,6 +404,7 @@ const ChartLoadingState = () => (
 
 export default function Dashboard() {
   const { t, language } = useLanguage();
+  const currentFinancialYear = getFinancialYear(new Date());
   const [activeDashboardTab, setActiveDashboardTab] = useState("overview");
   const [summary, setSummary] = useState(null);
   const [entries, setEntries] = useState([]);
@@ -400,7 +432,7 @@ export default function Dashboard() {
     region: "",
     circle: "",
     division: "",
-    kraYear: "",
+    kraYear: currentFinancialYear,
     period: "", // "YYYY-MM"
     kra: "",
   });
@@ -408,7 +440,9 @@ export default function Dashboard() {
   const [comparativeFilters, setComparativeFilters] = useState({
     level: "all",
     metric: "completionPercentage",
-    year: "",
+    year: currentFinancialYear,
+    month: "",
+    quarter: "",
     sortOrder: "top",
     topN: "5",
   });
@@ -561,14 +595,6 @@ export default function Dashboard() {
   const effectiveFyStart = selectedFyStart || getCurrentFyStartYear();
   const currentFyLabel = formatFyLabel(effectiveFyStart);
   const previousFyLabel = formatFyLabel(effectiveFyStart - 1);
-  const currentComparativeFyLabel = formatFyLabel(getCurrentFyStartYear());
-
-  useEffect(() => {
-    setComparativeFilters((prev) => {
-      if (prev.year) return prev;
-      return { ...prev, year: currentComparativeFyLabel };
-    });
-  }, [currentComparativeFyLabel]);
 
   const handleEntityDrillDown = async (row) => {
     const groupBy = getGroupByForSelection();
@@ -780,7 +806,6 @@ export default function Dashboard() {
         (r) => ({
           ...r,
           name: toCleanLabel(r?.name),
-          previousMonthPercentage: clampPercent(r?.previousMonthPercentage),
           currentMonthPercentage: clampPercent(r?.currentMonthPercentage),
         }),
       );
@@ -810,12 +835,7 @@ export default function Dashboard() {
         Number.isFinite(Number(summaryData?.totalTarget));
 
       if (hasValidSummary) {
-        setSummary({
-          ...summaryData,
-          achievementPercentage: clampPercent(
-            summaryData?.achievementPercentage,
-          ),
-        });
+        setSummary(summaryData);
       } else {
         const fallbackTotals = rawEntries.reduce(
           (acc, doc) => {
@@ -844,7 +864,7 @@ export default function Dashboard() {
           totalAchievement:
             Math.round(fallbackTotals.totalAchievement * 100) / 100,
           totalTarget: Math.round(fallbackTotals.totalTarget * 100) / 100,
-          achievementPercentage: clampPercent(fallbackAchPct),
+          achievementPercentage: fallbackAchPct,
         });
       }
 
@@ -975,48 +995,76 @@ export default function Dashboard() {
       region: "",
       circle: "",
       division: "",
-      kraYear: "",
+      kraYear: currentFinancialYear,
       period: "",
       kra: "",
     });
   };
 
+  useEffect(() => {
+    if (!comparativeFilters.year) return;
+    setFilters((prev) => {
+      if (prev.kraYear === comparativeFilters.year) return prev;
+      return {
+        ...prev,
+        kraYear: comparativeFilters.year,
+        period: "",
+      };
+    });
+  }, [comparativeFilters.year]);
+
   const fetchComparativeData = async () => {
     setIsComparativeLoading(true);
     try {
       const filterParams = {};
-      const selectedComparativeYearStart = getFyStartYear(
-        comparativeFilters.year,
-      );
-      const comparativeYearStart =
-        selectedComparativeYearStart || getCurrentFyStartYear();
+      const selectedFinancialYear =
+        comparativeFilters.year || getFinancialYear(new Date());
+      const selectedFinancialYearStart =
+        getFinancialYearStart(selectedFinancialYear) ||
+        getFinancialYearStart(getFinancialYear(new Date()));
+
+      filterParams.kraYear = selectedFinancialYear;
 
       filterParams.level = comparativeFilters.level;
       filterParams.metric = "completionPercentage";
-      filterParams.timeRange = "year";
-      filterParams.year = comparativeYearStart;
       filterParams.sortOrder = comparativeFilters.sortOrder;
       filterParams.topN = comparativeFilters.topN;
 
+      const hasMonth = Boolean(comparativeFilters.month);
+      const hasQuarter = Boolean(comparativeFilters.quarter);
+
+      if (hasMonth) {
+        filterParams.timeRange = "month";
+        filterParams.month = comparativeFilters.month;
+        filterParams.year =
+          Number(comparativeFilters.month) >= 6
+            ? selectedFinancialYearStart
+            : selectedFinancialYearStart + 1;
+      } else if (hasQuarter) {
+        filterParams.timeRange = "quarter";
+        filterParams.quarter = comparativeFilters.quarter;
+        filterParams.year = selectedFinancialYearStart;
+      } else {
+        filterParams.timeRange = "year";
+      }
+
       const res = await dashboardApi.getComparativeAnalysis(filterParams);
       setComparativeData(
-        normalizeComparativePayload(
-          res?.data?.data || {
-            level: comparativeFilters.level,
-            metric: "completionPercentage",
-            timeRange: "year",
-            sortOrder: comparativeFilters.sortOrder,
-            period: null,
-            topN: Number(comparativeFilters.topN || 5),
-            page: 1,
-            perPage: Number(comparativeFilters.topN || 5),
-            totalCount: 0,
-            topPerformers: [],
-            leaderboard: [],
-            risingPerformer: null,
-            needsAttention: null,
-          },
-        ),
+        res?.data?.data || {
+          level: comparativeFilters.level,
+          metric: "completionPercentage",
+          timeRange: filterParams.timeRange,
+          sortOrder: comparativeFilters.sortOrder,
+          period: null,
+          topN: Number(comparativeFilters.topN || 5),
+          page: 1,
+          perPage: Number(comparativeFilters.topN || 5),
+          totalCount: 0,
+          topPerformers: [],
+          leaderboard: [],
+          risingPerformer: null,
+          needsAttention: null,
+        },
       );
     } catch (error) {
       console.error("Error fetching comparative analysis:", error);
@@ -1045,18 +1093,63 @@ export default function Dashboard() {
     );
   }
 
+  const displayTopBars = topBars.map((item) => ({
+    ...item,
+    achievementPercentage: capPercentage(item?.achievementPercentage),
+  }));
+  const currentComparativeFinancialYear = getFinancialYear(new Date());
+  const comparativeYearOptions = buildFinancialYearOptions(
+    kraYears,
+    currentComparativeFinancialYear,
+  );
+  const displayBottomBars = bottomBars.map((item) => ({
+    ...item,
+    achievementPercentage: capPercentage(item?.achievementPercentage),
+  }));
+  const displayMonthlyTrend = monthlyTrend.map((item) => ({
+    ...item,
+    achievementPct: capPercentage(item?.achievementPct),
+  }));
+  const displayRankTable = rankTable.map((row) => ({
+    ...row,
+    previousMonthPercentage: capPercentage(row?.previousMonthPercentage),
+    currentMonthPercentage: capPercentage(row?.currentMonthPercentage),
+  }));
+  const displayWeightageDistribution = weightageDistribution.map((item) => ({
+    ...item,
+    displayWeight: capPercentage(item?.weight),
+  }));
+  const displayCorpKraPies = corpKraPies.map((corp) => ({
+    ...corp,
+    data: (corp?.data || []).map((slice) => ({
+      ...slice,
+      displaySlicePercentage: capPercentage(slice?.slicePercentage),
+      displayAchievementPercentage: capPercentage(slice?.achievementPercentage),
+      displayWeight: capPercentage(slice?.weight),
+    })),
+  }));
+
+  const isComparativePercentMetric =
+    comparativeFilters.metric === "completionPercentage" ||
+    comparativeFilters.metric === "efficiencyScore";
+  const comparativeRows = (comparativeData?.topPerformers || []).map((row) => ({
+    ...row,
+    metricValue: isComparativePercentMetric
+      ? capPercentage(row?.metricValue)
+      : toSafeNumber(row?.metricValue),
+  }));
+
   const topBottomMax = Math.max(
     100,
-    ...topBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
-    ...bottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
+    ...displayTopBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
+    ...displayBottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
   );
   const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
   const monthlyTrendMax = Math.max(
     100,
-    ...monthlyTrend.map((x) => toSafeNumber(x.achievementPct, 0)),
+    ...displayMonthlyTrend.map((x) => toSafeNumber(x.achievementPct, 0)),
   );
   const monthlyTrendYDomainMax = Math.ceil(monthlyTrendMax / 10) * 10;
-  const comparativeRows = comparativeData?.topPerformers || [];
   const comparativeChartHeight = Math.max(340, comparativeRows.length * 46);
 
   return (
@@ -1356,7 +1449,7 @@ export default function Dashboard() {
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart
-                      data={topBars}
+                      data={displayTopBars}
                       margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
                     >
                       <defs>
@@ -1409,7 +1502,7 @@ export default function Dashboard() {
                           fontSize: 13,
                         }}
                         formatter={(v) => [
-                          `${Number(v || 0).toFixed(2)}%`,
+                          formatDisplayPercentage(v, 2),
                           t("साध्य %", "Achievement %"),
                         ]}
                       />
@@ -1424,7 +1517,7 @@ export default function Dashboard() {
                           dataKey="achievementPercentage"
                           position="top"
                           formatter={(value) =>
-                            `${Number(value || 0).toFixed(1)}%`
+                            formatDisplayPercentage(value, 1)
                           }
                           style={{
                             fill: "#334155",
@@ -1432,7 +1525,7 @@ export default function Dashboard() {
                             fontWeight: 700,
                           }}
                         />
-                        {topBars.map((_, i) => (
+                        {displayTopBars.map((_, i) => (
                           <Cell
                             key={`top-${i}`}
                             fill={`url(#gradTop${i % BAR_TOP_COLORS.length})`}
@@ -1486,7 +1579,7 @@ export default function Dashboard() {
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart
-                      data={bottomBars}
+                      data={displayBottomBars}
                       margin={{ top: 24, right: 20, left: -20, bottom: 0 }}
                     >
                       <defs>
@@ -1539,7 +1632,7 @@ export default function Dashboard() {
                           fontSize: 13,
                         }}
                         formatter={(v) => [
-                          `${Number(v || 0).toFixed(2)}%`,
+                          formatDisplayPercentage(v, 2),
                           t("साध्य %", "Achievement %"),
                         ]}
                       />
@@ -1554,7 +1647,7 @@ export default function Dashboard() {
                           dataKey="achievementPercentage"
                           position="top"
                           formatter={(value) =>
-                            `${Number(value || 0).toFixed(1)}%`
+                            formatDisplayPercentage(value, 1)
                           }
                           style={{
                             fill: "#334155",
@@ -1562,7 +1655,7 @@ export default function Dashboard() {
                             fontWeight: 700,
                           }}
                         />
-                        {bottomBars.map((_, i) => (
+                        {displayBottomBars.map((_, i) => (
                           <Cell
                             key={`btm-${i}`}
                             fill={`url(#gradBtm${i % BAR_BTM_COLORS.length})`}
@@ -1632,7 +1725,7 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {rankTable.map((row, idx) => {
+                      {displayRankTable.map((row, idx) => {
                         const prev = Number(row.previousMonthPercentage) || 0;
                         const curr = Number(row.currentMonthPercentage) || 0;
                         const change = row.rankChange;
@@ -1649,14 +1742,14 @@ export default function Dashboard() {
                               <span
                                 className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${getPercentBadgeClass(prev)}`}
                               >
-                                {prev.toFixed(1)}%
+                                {formatDisplayPercentage(prev, 1)}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-right">
                               <span
                                 className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${getPercentBadgeClass(curr)}`}
                               >
-                                {curr.toFixed(1)}%
+                                {formatDisplayPercentage(curr, 1)}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-right">
@@ -1735,10 +1828,7 @@ export default function Dashboard() {
                 </div>
                 <div className="space-y-4">
                   {kraWiseData.map((kra, idx) => {
-                    const pct = Math.min(
-                      Number(kra.achievementPercentage) || 0,
-                      100,
-                    );
+                    const pct = capPercentage(kra.achievementPercentage);
                     const progressColors = [
                       "from-indigo-500 to-blue-500",
                       "from-amber-500 to-orange-500",
@@ -1779,10 +1869,10 @@ export default function Dashboard() {
                           <span
                             className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${bgColors[colorIdx]} ${textColors[colorIdx]}`}
                           >
-                            {(Number(kra.achievementPercentage) || 0).toFixed(
+                            {formatDisplayPercentage(
+                              kra.achievementPercentage,
                               1,
                             )}
-                            %
                           </span>
                         </div>
                         <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
@@ -1812,10 +1902,7 @@ export default function Dashboard() {
                             sum + (Number(kra.achievementPercentage) || 0),
                           0,
                         ) / kraWiseData.length;
-                      const overallPct = Math.min(
-                        Number(overallAverage) || 0,
-                        100,
-                      );
+                      const overallPct = capPercentage(overallAverage);
 
                       return (
                         <div className="pt-3 mt-2 border-t border-slate-200">
@@ -1824,7 +1911,7 @@ export default function Dashboard() {
                               {t("एकूण साध्य", "Overall Achivments")}
                             </span>
                             <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
-                              {overallAverage.toFixed(1)}%
+                              {formatDisplayPercentage(overallAverage, 1)}
                             </span>
                           </div>
                           <div className="relative h-3.5 bg-slate-100 rounded-full overflow-hidden">
@@ -1872,7 +1959,7 @@ export default function Dashboard() {
               ) : monthlyTrend.length > 0 ? (
                 <ResponsiveContainer width="100%" height={350}>
                   <LineChart
-                    data={monthlyTrend}
+                    data={displayMonthlyTrend}
                     margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1886,7 +1973,7 @@ export default function Dashboard() {
                     <YAxis
                       type="number"
                       domain={[0, monthlyTrendYDomainMax]}
-                      tickFormatter={(v) => `${Number(v || 0).toFixed(0)}%`}
+                      tickFormatter={(v) => formatDisplayPercentage(v, 0)}
                       tick={{ fill: "#94a3b8", fontSize: 11 }}
                       axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                       tickLine={false}
@@ -1899,7 +1986,7 @@ export default function Dashboard() {
                         fontSize: 13,
                       }}
                       formatter={(v) => [
-                        `${Number(v || 0).toFixed(2)}%`,
+                        formatDisplayPercentage(v, 2),
                         t("साध्य टक्केवारी", "Achievement %"),
                       ]}
                     />
@@ -1957,8 +2044,8 @@ export default function Dashboard() {
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
-                        data={weightageDistribution}
-                        dataKey="weight"
+                        data={displayWeightageDistribution}
+                        dataKey="displayWeight"
                         nameKey="kraName"
                         cx="50%"
                         cy="50%"
@@ -1968,13 +2055,17 @@ export default function Dashboard() {
                         outerRadius={112}
                         paddingAngle={3}
                         labelLine={false}
-                        label={(d) => `${Number(d?.weight || 0).toFixed(0)}%`}
+                        label={(d) =>
+                          formatDisplayPercentage(d?.displayWeight, 0)
+                        }
                         stroke="none"
                       >
-                        {weightageDistribution.map((_, index) => (
+                        {displayWeightageDistribution.map((_, index) => (
                           <Cell
                             key={`wc-${index}`}
-                            fill={getKraColor(weightageDistribution[index])}
+                            fill={getKraColor(
+                              displayWeightageDistribution[index],
+                            )}
                           />
                         ))}
                       </Pie>
@@ -1991,7 +2082,7 @@ export default function Dashboard() {
                             language,
                           );
                           return [
-                            `${Number(v || 0).toFixed(2)}%`,
+                            formatDisplayPercentage(v, 2),
                             name || t("KRA", "KRA"),
                           ];
                         }}
@@ -2004,7 +2095,7 @@ export default function Dashboard() {
                       {t("KRA तपशील", "KRA Details")}
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                      {weightageDistribution.map((item, index) => (
+                      {displayWeightageDistribution.map((item, index) => (
                         <div
                           key={`weight-legend-${item?.kraId || index}`}
                           className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
@@ -2021,7 +2112,7 @@ export default function Dashboard() {
                               {localizeString(item?.kraName || "-", language)}
                             </p>
                             <p className="text-[11px] font-bold text-slate-500 mt-0.5">
-                              {Number(item?.weight || 0).toFixed(2)}%
+                              {formatDisplayPercentage(item?.displayWeight, 2)}
                             </p>
                           </div>
                         </div>
@@ -2065,7 +2156,7 @@ export default function Dashboard() {
                     <ChartLoadingState />
                   </div>
                 ) : (
-                  corpKraPies.map((corp, corpIdx) => {
+                  displayCorpKraPies.map((corp, corpIdx) => {
                     const corpPieLabel = createNonOverlappingPieLabel();
                     const borderColors = [
                       "border-indigo-200",
@@ -2098,7 +2189,7 @@ export default function Dashboard() {
                           <PieChart>
                             <Pie
                               data={corp.data || []}
-                              dataKey="slicePercentage"
+                              dataKey="displaySlicePercentage"
                               nameKey="kraName"
                               cx="50%"
                               cy="45%"
@@ -2127,12 +2218,12 @@ export default function Dashboard() {
                               }}
                               formatter={(v, _n, props) => {
                                 const p = props?.payload;
-                                const ach = Number(
-                                  p?.achievementPercentage || 0,
+                                const ach = capPercentage(
+                                  p?.displayAchievementPercentage,
                                 );
-                                const w = Number(p?.weight || 0);
+                                const w = capPercentage(p?.displayWeight);
                                 return [
-                                  `${Number(v || 0).toFixed(2)}% (Ach ${ach.toFixed(1)}%, W ${w})`,
+                                  `${formatDisplayPercentage(v, 2)} (Ach ${formatDisplayPercentage(ach, 1)}, W ${formatDisplayPercentage(w, 1)})`,
                                   t("स्कोअर शेअर", "Score share"),
                                 ];
                               }}
@@ -2175,12 +2266,15 @@ export default function Dashboard() {
                     {t("तुलनात्मक फिल्टर", "Comparative Filters")}
                   </h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    {t("स्तर व कालावधी निवडा", "Select level and time range")}
+                    {t(
+                      "स्तर व आर्थिक वर्ष निवडा",
+                      "Select level and financial year",
+                    )}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
                     {t("तुलना स्तर", "Comparison Level")}
@@ -2217,9 +2311,9 @@ export default function Dashboard() {
                     }
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
                   >
-                    {kraYears.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
+                    {comparativeYearOptions.map((fy) => (
+                      <option key={fy} value={fy}>
+                        {fy}
                       </option>
                     ))}
                   </select>
@@ -2250,6 +2344,53 @@ export default function Dashboard() {
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("महिना", "Month")}
+                  </label>
+                  <select
+                    value={comparativeFilters.month}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        month: e.target.value,
+                        quarter: e.target.value ? "" : prev.quarter,
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {COMPARATIVE_MONTHS.map((month) => (
+                      <option key={month.value} value={month.value}>
+                        {t(month.mr, month.en)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    {t("तिमाही", "Quarter")}
+                  </label>
+                  <select
+                    value={comparativeFilters.quarter}
+                    onChange={(e) =>
+                      setComparativeFilters((prev) => ({
+                        ...prev,
+                        quarter: e.target.value,
+                        month: e.target.value ? "" : prev.month,
+                      }))
+                    }
+                    className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  >
+                    <option value="">{t("सर्व", "All")}</option>
+                    {COMPARATIVE_QUARTERS.map((quarter) => (
+                      <option key={quarter.value} value={quarter.value}>
+                        {t(quarter.mr, quarter.en)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </SectionCard>
 
@@ -2419,7 +2560,7 @@ export default function Dashboard() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {(comparativeData?.leaderboard || []).map((row, idx) => {
-                      const completion = clampPercent(
+                      const completion = capPercentage(
                         row?.completionPercentage,
                       );
                       return (
@@ -2476,7 +2617,7 @@ export default function Dashboard() {
                             </div>
                             <p className="mt-1 text-[11px] font-semibold text-slate-500">
                               {t("पूर्णता", "Completion")}:{" "}
-                              {completion.toFixed(1)}%
+                              {formatDisplayPercentage(completion, 1)}
                             </p>
                           </td>
                         </tr>

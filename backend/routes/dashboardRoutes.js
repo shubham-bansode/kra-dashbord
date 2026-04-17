@@ -22,6 +22,24 @@ function toInt(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function expandKraYearVariants(rawYear) {
+  const value = String(rawYear || '').trim();
+  if (!value) return [];
+
+  const shortFyMatch = value.match(/^(\d{4})-(\d{2})$/);
+  if (shortFyMatch) {
+    const start = Number(shortFyMatch[1]);
+    const endShort = Number(shortFyMatch[2]);
+    if (Number.isFinite(start) && Number.isFinite(endShort)) {
+      const century = Math.floor(start / 100) * 100;
+      const endFull = century + endShort;
+      return [value, `${start}-${endFull}`];
+    }
+  }
+
+  return [value];
+}
+
 function buildBaseMatch(query) {
   const match = {};
 
@@ -35,7 +53,10 @@ function buildBaseMatch(query) {
   if (circleId) match.circle = circleId;
   if (divisionId) match.division = divisionId;
 
-  if (query.kraYear) match.kraYear = String(query.kraYear).trim();
+  if (query.kraYear) {
+    const variants = expandKraYearVariants(query.kraYear);
+    match.kraYear = variants.length > 1 ? { $in: variants } : variants[0];
+  }
 
   return match;
 }
@@ -412,9 +433,9 @@ function normalizeComparativeMetric(rawMetric) {
 
     function quarterForMonth(month) {
       const m = Number(month || 1);
-      if (m >= 4 && m <= 6) return 1;
-      if (m >= 7 && m <= 9) return 2;
-      if (m >= 10 && m <= 12) return 3;
+      if (m >= 6 && m <= 8) return 1;
+      if (m >= 9 && m <= 11) return 2;
+      if (m === 12 || m === 1 || m === 2) return 3;
       return 4;
     }
 
@@ -422,7 +443,7 @@ function normalizeComparativeMetric(rawMetric) {
       const y = Number(year || 0);
       const m = Number(month || 1);
       if (!Number.isFinite(y)) return null;
-      return m >= 4 ? y : y - 1;
+      return m >= 6 ? y : y - 1;
     }
 
     function quarterBounds(fiscalYearStart, quarter) {
@@ -433,10 +454,12 @@ function normalizeComparativeMetric(rawMetric) {
         return {
           fiscalYearStart: fy,
           quarter: q,
-          year: fy,
-          startMonth: 4,
-          endMonth: 6,
-          label: `Q1 (Apr-Jun) FY ${fy}-${String(fy + 1).slice(-2)}`
+          periods: [
+            { year: fy, month: 6 },
+            { year: fy, month: 7 },
+            { year: fy, month: 8 }
+          ],
+          label: `Q1 (Jun-Aug) FY ${fy}-${String(fy + 1).slice(-2)}`
         };
       }
 
@@ -444,10 +467,12 @@ function normalizeComparativeMetric(rawMetric) {
         return {
           fiscalYearStart: fy,
           quarter: q,
-          year: fy,
-          startMonth: 7,
-          endMonth: 9,
-          label: `Q2 (Jul-Sep) FY ${fy}-${String(fy + 1).slice(-2)}`
+          periods: [
+            { year: fy, month: 9 },
+            { year: fy, month: 10 },
+            { year: fy, month: 11 }
+          ],
+          label: `Q2 (Sep-Nov) FY ${fy}-${String(fy + 1).slice(-2)}`
         };
       }
 
@@ -455,20 +480,24 @@ function normalizeComparativeMetric(rawMetric) {
         return {
           fiscalYearStart: fy,
           quarter: q,
-          year: fy,
-          startMonth: 10,
-          endMonth: 12,
-          label: `Q3 (Oct-Dec) FY ${fy}-${String(fy + 1).slice(-2)}`
+          periods: [
+            { year: fy, month: 12 },
+            { year: fy + 1, month: 1 },
+            { year: fy + 1, month: 2 }
+          ],
+          label: `Q3 (Dec-Feb) FY ${fy}-${String(fy + 1).slice(-2)}`
         };
       }
 
       return {
         fiscalYearStart: fy,
         quarter: 4,
-        year: fy + 1,
-        startMonth: 1,
-        endMonth: 3,
-        label: `Q4 (Jan-Mar) FY ${fy}-${String(fy + 1).slice(-2)}`
+        periods: [
+          { year: fy + 1, month: 3 },
+          { year: fy + 1, month: 4 },
+          { year: fy + 1, month: 5 }
+        ],
+        label: `Q4 (Mar-May) FY ${fy}-${String(fy + 1).slice(-2)}`
       };
     }
 
@@ -545,19 +574,23 @@ function normalizeComparativeMetric(rawMetric) {
         const currentQuarter = quarterBounds(currentFiscalYearStart, currentQuarterNumber);
         const previousQuarter = previousQuarterBounds(currentQuarter.fiscalYearStart, currentQuarter.quarter);
 
-        const currentMonths = [currentQuarter.startMonth, currentQuarter.startMonth + 1, currentQuarter.endMonth];
-        const previousMonths = [previousQuarter.startMonth, previousQuarter.startMonth + 1, previousQuarter.endMonth];
+        const currentPeriods = Array.isArray(currentQuarter.periods) ? currentQuarter.periods : [];
+        const previousPeriods = Array.isArray(previousQuarter.periods) ? previousQuarter.periods : [];
 
         return {
           currentMatch: {
             ...baseMatch,
-            achievementYear: currentQuarter.year,
-            achievementMonth: { $in: currentMonths }
+            $or: currentPeriods.map((p) => ({
+              achievementYear: p.year,
+              achievementMonth: p.month
+            }))
           },
           previousMatch: {
             ...baseMatch,
-            achievementYear: previousQuarter.year,
-            achievementMonth: { $in: previousMonths }
+            $or: previousPeriods.map((p) => ({
+              achievementYear: p.year,
+              achievementMonth: p.month
+            }))
           },
           currentLabel: currentQuarter.label,
           previousLabel: previousQuarter.label
