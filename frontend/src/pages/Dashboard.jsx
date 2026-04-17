@@ -99,6 +99,41 @@ const clampPercent = (value) => {
   return toSafeNumber(value, 0);
 };
 
+const getNiceStep = (rawStep) => {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 10;
+  const exponent = Math.floor(Math.log10(rawStep));
+  const fraction = rawStep / 10 ** exponent;
+
+  let niceFraction;
+  if (fraction <= 1) niceFraction = 1;
+  else if (fraction <= 2) niceFraction = 2;
+  else if (fraction <= 5) niceFraction = 5;
+  else niceFraction = 10;
+
+  return niceFraction * 10 ** exponent;
+};
+
+const buildDynamicPercentageAxis = (
+  values,
+  { desiredTicks = 6, minMax = 10, cap = 100 } = {},
+) => {
+  const numericValues = Array.isArray(values)
+    ? values.map((v) => toSafeNumber(v, 0))
+    : [];
+  const maxValue = Math.max(0, ...numericValues);
+  const paddedMax = maxValue > 0 ? maxValue * 1.12 : minMax;
+  const boundedMax = Math.min(cap, Math.max(minMax, paddedMax));
+  const step = getNiceStep(boundedMax / Math.max(desiredTicks - 1, 1));
+  const axisMax = Math.ceil(boundedMax / step) * step;
+
+  const ticks = [];
+  for (let tick = 0; tick <= axisMax + step / 2; tick += step) {
+    ticks.push(Number(tick.toFixed(4)));
+  }
+
+  return { max: axisMax, ticks };
+};
+
 const toCleanLabel = (value, fallback = "") => {
   const label = String(value || "").trim();
   return label || fallback;
@@ -165,6 +200,26 @@ const normalizeTrendRows = (rows = []) =>
       achievementPct:
         target > 0 ? Math.round((achievement / target) * 100 * 100) / 100 : 0,
     };
+  });
+
+const fiscalMonthIndex = (month) => {
+  const m = Number(month || 0);
+  if (!Number.isFinite(m) || m < 1 || m > 12) return 99;
+  return m >= 6 ? m - 6 : m + 6;
+};
+
+const sortTrendByFinancialOrder = (rows = []) =>
+  [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const aMonth = Number(a?.month || 0);
+    const bMonth = Number(b?.month || 0);
+    const aYear = Number(a?.year || 0);
+    const bYear = Number(b?.year || 0);
+
+    const aFiscalStart = aMonth >= 6 ? aYear : aYear - 1;
+    const bFiscalStart = bMonth >= 6 ? bYear : bYear - 1;
+
+    if (aFiscalStart !== bFiscalStart) return aFiscalStart - bFiscalStart;
+    return fiscalMonthIndex(aMonth) - fiscalMonthIndex(bMonth);
   });
 
 const normalizeKraRows = (rows = []) =>
@@ -1038,6 +1093,9 @@ export default function Dashboard() {
     ...item,
     achievementPercentage: capPercentage(item?.achievementPercentage),
   }));
+  const topPerformerAxis = buildDynamicPercentageAxis(
+    displayTopBars.map((x) => x.achievementPercentage),
+  );
   const currentComparativeFinancialYear = getFinancialYear(new Date());
   const comparativeYearOptions = buildFinancialYearOptions(
     kraYears,
@@ -1047,10 +1105,17 @@ export default function Dashboard() {
     ...item,
     achievementPercentage: capPercentage(item?.achievementPercentage),
   }));
+  const bottomPerformerAxis = buildDynamicPercentageAxis(
+    displayBottomBars.map((x) => x.achievementPercentage),
+  );
   const displayMonthlyTrend = monthlyTrend.map((item) => ({
     ...item,
     achievementPct: capPercentage(item?.achievementPct),
   }));
+  const orderedMonthlyTrend = sortTrendByFinancialOrder(displayMonthlyTrend);
+  const monthlyTrendAxis = buildDynamicPercentageAxis(
+    orderedMonthlyTrend.map((x) => x.achievementPct),
+  );
   const displayRankTable = rankTable.map((row) => ({
     ...row,
     previousMonthPercentage: capPercentage(row?.previousMonthPercentage),
@@ -1080,17 +1145,6 @@ export default function Dashboard() {
       : toSafeNumber(row?.metricValue),
   }));
 
-  const topBottomMax = Math.max(
-    100,
-    ...displayTopBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
-    ...displayBottomBars.map((x) => toSafeNumber(x.achievementPercentage, 0)),
-  );
-  const yDomainMax = Math.ceil(topBottomMax / 10) * 10;
-  const monthlyTrendMax = Math.max(
-    100,
-    ...displayMonthlyTrend.map((x) => toSafeNumber(x.achievementPct, 0)),
-  );
-  const monthlyTrendYDomainMax = Math.ceil(monthlyTrendMax / 10) * 10;
   const comparativeChartHeight = Math.max(340, comparativeRows.length * 46);
 
   return (
@@ -1412,7 +1466,9 @@ export default function Dashboard() {
                         tickLine={false}
                       />
                       <YAxis
-                        domain={[0, yDomainMax]}
+                        domain={[0, topPerformerAxis.max]}
+                        ticks={topPerformerAxis.ticks}
+                        allowDecimals={false}
                         tick={{ fill: "#94a3b8", fontSize: 11 }}
                         axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                         tickLine={false}
@@ -1542,7 +1598,9 @@ export default function Dashboard() {
                         tickLine={false}
                       />
                       <YAxis
-                        domain={[0, yDomainMax]}
+                        domain={[0, bottomPerformerAxis.max]}
+                        ticks={bottomPerformerAxis.ticks}
+                        allowDecimals={false}
                         tick={{ fill: "#94a3b8", fontSize: 11 }}
                         axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                         tickLine={false}
@@ -1883,7 +1941,7 @@ export default function Dashboard() {
               ) : monthlyTrend.length > 0 ? (
                 <ResponsiveContainer width="100%" height={350}>
                   <LineChart
-                    data={displayMonthlyTrend}
+                    data={orderedMonthlyTrend}
                     margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1896,7 +1954,9 @@ export default function Dashboard() {
                     />
                     <YAxis
                       type="number"
-                      domain={[0, monthlyTrendYDomainMax]}
+                      domain={[0, monthlyTrendAxis.max]}
+                      ticks={monthlyTrendAxis.ticks}
+                      allowDecimals={false}
                       tickFormatter={(v) => formatDisplayPercentage(v, 0)}
                       tick={{ fill: "#94a3b8", fontSize: 11 }}
                       axisLine={{ stroke: "#000000", strokeWidth: 3 }}
