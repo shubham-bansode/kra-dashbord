@@ -400,6 +400,50 @@ function percentageProject({ achievementField, targetField }) {
   };
 }
 
+function roundToTwo(n) {
+  const value = Number(n || 0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
+
+function normalizeSlicePercentages(items = []) {
+  const rows = Array.isArray(items) ? items : [];
+  if (rows.length === 0) return [];
+
+  const rounded = rows.map((item) => ({
+    ...item,
+    slicePercentage: roundToTwo(item?.slicePercentage)
+  }));
+
+  const total = roundToTwo(
+    rounded.reduce((sum, item) => sum + Number(item?.slicePercentage || 0), 0)
+  );
+
+  // No contribution available (e.g., all targets are zero).
+  if (total <= 0) {
+    return rounded.map((item) => ({ ...item, slicePercentage: 0 }));
+  }
+
+  const delta = roundToTwo(100 - total);
+  if (Math.abs(delta) < 0.01) return rounded;
+
+  let maxIdx = 0;
+  for (let i = 1; i < rounded.length; i += 1) {
+    if ((rounded[i]?.slicePercentage || 0) > (rounded[maxIdx]?.slicePercentage || 0)) {
+      maxIdx = i;
+    }
+  }
+
+  rounded[maxIdx] = {
+    ...rounded[maxIdx],
+    slicePercentage: roundToTwo(
+      Math.max(0, Number(rounded[maxIdx]?.slicePercentage || 0) + delta)
+    )
+  };
+
+  return rounded;
+}
+
 function normalizeComparativeMetric(rawMetric) {
       const metric = String(rawMetric || '').trim().toLowerCase();
       const supported = new Set([
@@ -795,9 +839,19 @@ function normalizeComparativeMetric(rawMetric) {
         const timeRange = normalizeTimeRange(req.query.timeRange);
         const sortOrder = normalizeComparativeSortOrder(req.query.sortOrder);
 
-        const topN = Math.min(Math.max(toInt(req.query.topN) || 5, 1), 50);
-        const page = Math.max(toInt(req.query.page) || 1, 1);
-        const perPage = Math.min(Math.max(toInt(req.query.limit) || topN, 1), 100);
+        const topNRaw = String(req.query.topN || '').trim().toLowerCase();
+        const isAllTopN = topNRaw === 'all';
+        const parsedTopN = Math.min(Math.max(toInt(req.query.topN) || 5, 1), 50);
+        const topN = isAllTopN ? null : parsedTopN;
+
+        const requestedPage = toInt(req.query.page);
+        const page = Math.max(requestedPage || 1, 1);
+        const requestedLimit = toInt(req.query.limit);
+        const hasRequestedLimit = Number.isFinite(requestedLimit);
+        const perPage = Math.min(
+          Math.max(hasRequestedLimit ? requestedLimit : parsedTopN, 1),
+          100
+        );
 
         const hasExplicitPeriod =
           Number.isFinite(toInt(req.query.month)) &&
@@ -919,9 +973,19 @@ function normalizeComparativeMetric(rawMetric) {
           rank: idx + 1
         }));
 
-        const start = (page - 1) * perPage;
-        const leaderboard = finalRankedRows.slice(start, start + perPage);
-        const topPerformers = finalRankedRows.slice(0, topN);
+        const useFullLeaderboard = isAllTopN && !hasRequestedLimit;
+        const resolvedPage = useFullLeaderboard ? 1 : page;
+        const resolvedPerPage = useFullLeaderboard
+          ? Math.max(finalRankedRows.length, 1)
+          : perPage;
+
+        const start = (resolvedPage - 1) * resolvedPerPage;
+        const leaderboard = useFullLeaderboard
+          ? finalRankedRows
+          : finalRankedRows.slice(start, start + resolvedPerPage);
+        const topPerformers = isAllTopN
+          ? finalRankedRows
+          : finalRankedRows.slice(0, topN);
 
         const risingPerformer =
           [...rankedRows]
@@ -942,9 +1006,9 @@ function normalizeComparativeMetric(rawMetric) {
               currentLabel: range.currentLabel,
               previousLabel: range.previousLabel
             },
-            topN,
-            page,
-            perPage,
+            topN: isAllTopN ? finalRankedRows.length : topN,
+            page: resolvedPage,
+            perPage: resolvedPerPage,
             totalCount: finalRankedRows.length,
             topPerformers,
             leaderboard,
@@ -1455,7 +1519,12 @@ router.get('/corp-kra-performance', async (req, res) => {
       { $sort: { corporationCode: 1, corporationName: 1 } }
     ]);
 
-    res.json({ success: true, period, data });
+    const normalizedData = data.map((row) => ({
+      ...row,
+      data: normalizeSlicePercentages(row?.data)
+    }));
+
+    res.json({ success: true, period, data: normalizedData });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error fetching corporation KRA performance', error: error.message });
   }

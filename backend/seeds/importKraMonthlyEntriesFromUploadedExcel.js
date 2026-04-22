@@ -139,6 +139,26 @@ function parseNumber(value) {
   return n < 0 ? 0 : n;
 }
 
+function getCircleFromDynamicRegionColumns(row, regionName) {
+  const region = normalizeText(regionName);
+  if (!region || !row || typeof row !== 'object') return '';
+
+  const regionNorm = normalizeKey(region);
+  const keys = Object.keys(row || {});
+
+  // Google Form often stores circle in a dynamic column named as selected region
+  // (e.g. "CE SP, Pune" or "CE SP, Pune_1").
+  const candidateKeys = keys.filter((k) => {
+    const keyText = normalizeText(k);
+    if (!keyText) return false;
+
+    const keyNoSuffix = keyText.replace(/_\d+$/, '');
+    return normalizeKey(keyNoSuffix) === regionNorm;
+  });
+
+  return getFirstNonEmpty(row, candidateKeys);
+}
+
 function kraIdFromName(name) {
   const s = normalizeText(name);
   if (!s) return null;
@@ -220,8 +240,17 @@ async function main() {
     const rowNumber = i + 2;
 
     const corporationName = normalizeText(row['महामंडळ (Corporation)']);
+
+    // Some uploaded sheets include a repeated header row in the middle.
+    if (/corporation/i.test(corporationName)) {
+      skipped.push({ row: rowNumber, reason: 'Repeated header row in data' });
+      continue;
+    }
+
     const regionName = getFirstNonEmpty(row, REGION_FALLBACK_COLUMNS);
-    const circleName = getFirstNonEmpty(row, CIRCLE_FALLBACK_COLUMNS);
+    const circleName =
+      getFirstNonEmpty(row, CIRCLE_FALLBACK_COLUMNS) ||
+      getCircleFromDynamicRegionColumns(row, regionName);
     const divisionName = getFirstNonEmpty(row, DIVISION_COLUMNS);
 
     const corp = corpByKey.get(normalizeKey(corporationName));

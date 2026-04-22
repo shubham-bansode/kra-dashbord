@@ -241,6 +241,11 @@ const COMPARATIVE_LEVELS = [
 ];
 
 const COMPARATIVE_MONTHS = [
+  { value: "1", mr: "जानेवारी", en: "January" },
+  { value: "2", mr: "फेब्रुवारी", en: "February" },
+  { value: "3", mr: "मार्च", en: "March" },
+  { value: "4", mr: "एप्रिल", en: "April" },
+  { value: "5", mr: "मे", en: "May" },
   { value: "6", mr: "जून", en: "June" },
   { value: "7", mr: "जुलै", en: "July" },
   { value: "8", mr: "ऑगस्ट", en: "August" },
@@ -248,11 +253,6 @@ const COMPARATIVE_MONTHS = [
   { value: "10", mr: "ऑक्टोबर", en: "October" },
   { value: "11", mr: "नोव्हेंबर", en: "November" },
   { value: "12", mr: "डिसेंबर", en: "December" },
-  { value: "1", mr: "जानेवारी", en: "January" },
-  { value: "2", mr: "फेब्रुवारी", en: "February" },
-  { value: "3", mr: "मार्च", en: "March" },
-  { value: "4", mr: "एप्रिल", en: "April" },
-  { value: "5", mr: "मे", en: "May" },
 ];
 
 const COMPARATIVE_QUARTERS = [
@@ -263,6 +263,7 @@ const COMPARATIVE_QUARTERS = [
 ];
 
 const COMPARATIVE_PERFORMER_OPTIONS = [
+  { value: "all", en: "All" },
   { value: "top-5", en: "Top 5" },
   { value: "top-10", en: "Top 10" },
   { value: "bottom-5", en: "Bottom 5" },
@@ -323,6 +324,29 @@ const truncateAxisLabel = (label, maxLen = 24) => {
   return `${text.slice(0, maxLen - 1)}…`;
 };
 
+const toDevanagariDigits = (value) =>
+  String(value || "").replace(/\d/g, (digit) => "०१२३४५६७८९"[Number(digit)]);
+
+const withCurrentKraYearLabel = (label, fyLabel, language) => {
+  const text = String(label || "");
+  const fy = String(fyLabel || "").trim();
+  if (!text || !/^\d{4}-\d{2}$/.test(fy)) return text;
+
+  const yearToken = language === "mr" ? toDevanagariDigits(fy) : fy;
+
+  return text
+    .replace(/[0-9]{4}-[0-9]{2}/g, fy)
+    .replace(/[०-९]{4}-[०-९]{2}/g, toDevanagariDigits(fy))
+    .replace(/सन\s*[0-9]{4}-[0-9]{2}/g, `सन ${toDevanagariDigits(fy)}`)
+    .replace(/सन\s*[०-९]{4}-[०-९]{2}/g, `सन ${toDevanagariDigits(fy)}`)
+    .replace(/FY\s*[0-9]{4}-[0-9]{2}/gi, `FY ${fy}`)
+    .replace(
+      /फायनान्शियल\s*इयर\s*[०-९0-9]{4}-[०-९0-9]{2}/gi,
+      `फायनान्शियल इयर ${toDevanagariDigits(fy)}`,
+    )
+    .replace(/\((?:सन\s*)?[०-९0-9]{4}-[०-९0-9]{2}\)/g, `(${yearToken})`);
+};
+
 const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
   const usedLeftY = [];
   const usedRightY = [];
@@ -352,6 +376,10 @@ const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
       return null;
     }
 
+    if (value <= 0) {
+      return null;
+    }
+
     const rad = (-midAngle * Math.PI) / 180;
     const rightSide = Math.cos(rad) >= 0;
     const rawY = cy + Math.sin(rad) * (outerRadius + 24);
@@ -369,8 +397,14 @@ const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
     adjustedY = Math.max(topClamp, Math.min(bottomClamp, adjustedY));
     used.push(adjustedY);
 
+    const kraName = toCleanLabel(props?.payload?.displayKraName, "");
+    const namePart = kraName ? truncateAxisLabel(kraName, 16) : "KRA";
+    const textValue = `${value.toFixed(2)}%`;
+    const labelText = `${namePart} ${textValue}`;
+
     const placement = {
       value,
+      labelText,
       cx,
       cy,
       rightSide,
@@ -395,12 +429,12 @@ const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
           x={placement.textX}
           y={placement.textY}
           fill="#0f172a"
-          fontSize={12}
+          fontSize={11}
           fontWeight={700}
           textAnchor={placement.rightSide ? "start" : "end"}
           dominantBaseline="central"
         >
-          {`${placement.value.toFixed(1)}%`}
+          {placement.labelText}
         </text>
       );
     },
@@ -477,7 +511,7 @@ export default function Dashboard() {
     circle: "",
     division: "",
     kraYear: currentFinancialYear,
-    period: "", // "YYYY-MM"
+    period: "", // month number string: "1" to "12"
     kra: "",
   });
 
@@ -591,15 +625,29 @@ export default function Dashboard() {
     fetchDashboardData();
   }, [filters, kras]);
 
-  const parsePeriod = (periodKey) => {
+  const parsePeriod = (periodKey, kraYear) => {
     if (!periodKey) return { month: undefined, year: undefined };
-    const [y, m] = String(periodKey).split("-");
-    const year = parseInt(y, 10);
-    const month = parseInt(m, 10);
-    return {
-      year: Number.isFinite(year) ? year : undefined,
-      month: Number.isFinite(month) ? month : undefined,
-    };
+
+    // Backward compatibility for any existing "YYYY-MM" filter values.
+    if (String(periodKey).includes("-")) {
+      const [y, m] = String(periodKey).split("-");
+      const year = parseInt(y, 10);
+      const month = parseInt(m, 10);
+      return {
+        year: Number.isFinite(year) ? year : undefined,
+        month: Number.isFinite(month) ? month : undefined,
+      };
+    }
+
+    const month = parseInt(String(periodKey), 10);
+    if (!Number.isFinite(month)) return { month: undefined, year: undefined };
+
+    const fyStart = getFyStartYear(kraYear);
+    if (!Number.isFinite(fyStart)) return { month, year: undefined };
+
+    // Financial year runs Jun-May.
+    const year = month >= 6 ? fyStart : fyStart + 1;
+    return { month, year };
   };
 
   const getGroupByForSelection = () => {
@@ -696,7 +744,7 @@ export default function Dashboard() {
       // If Month is not selected, show ALL existing entries/aggregates.
       if (!filters.period) filterParams.periodMode = "all";
 
-      const { month, year } = parsePeriod(filters.period);
+      const { month, year } = parsePeriod(filters.period, filters.kraYear);
       if (month) filterParams.month = String(month);
       if (year) filterParams.year = String(year);
 
@@ -1124,9 +1172,18 @@ export default function Dashboard() {
     previousMonthPercentage: capPercentage(row?.previousMonthPercentage),
     currentMonthPercentage: capPercentage(row?.currentMonthPercentage),
   }));
+  const activeKraYearLabel = filters.kraYear || currentFinancialYear;
+  const getDisplayKraLabel = (label) =>
+    withCurrentKraYearLabel(
+      localizeString(label || "-", language),
+      activeKraYearLabel,
+      language,
+    );
+
   const displayWeightageDistribution = weightageDistribution.map((item) => ({
     ...item,
     displayWeight: capPercentage(item?.weight),
+    displayKraName: getDisplayKraLabel(item?.kraName || "-"),
   }));
   const displayCorpKraPies = corpKraPies.map((corp) => ({
     ...corp,
@@ -1135,6 +1192,7 @@ export default function Dashboard() {
       displaySlicePercentage: capPercentage(slice?.slicePercentage),
       displayAchievementPercentage: capPercentage(slice?.achievementPercentage),
       displayWeight: capPercentage(slice?.weight),
+      displayKraName: getDisplayKraLabel(slice?.kraName || "-"),
     })),
   }));
 
@@ -1377,18 +1435,13 @@ export default function Dashboard() {
                     onChange={(e) =>
                       handleFilterChange("period", e.target.value)
                     }
-                    disabled={periods.length === 0}
                   >
                     <option value="">{t("सर्व", "All")}</option>
-                    {periods.map((p) => {
-                      const key = `${p.year}-${String(p.month).padStart(2, "0")}`;
-                      return (
-                        <option
-                          key={key}
-                          value={key}
-                        >{`${String(p.month).padStart(2, "0")}/${p.year}`}</option>
-                      );
-                    })}
+                    {COMPARATIVE_MONTHS.map((month) => (
+                      <option key={month.value} value={month.value}>
+                        {t(month.mr, month.en)}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1877,9 +1930,8 @@ export default function Dashboard() {
                       <div key={kra.kraId || idx}>
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-sm font-bold text-slate-700 truncate max-w-[65%]">
-                            {localizeString(
+                            {getDisplayKraLabel(
                               kra.kraName || `KRA ${kra.kraId}`,
-                              language,
                             )}
                           </span>
                           <span
@@ -2095,10 +2147,9 @@ export default function Dashboard() {
                           fontSize: 12,
                         }}
                         formatter={(v, _n, props) => {
-                          const name = localizeString(
-                            props?.payload?.kraName || "",
-                            language,
-                          );
+                          const name =
+                            props?.payload?.displayKraName ||
+                            getDisplayKraLabel(props?.payload?.kraName || "");
                           return [
                             formatDisplayPercentage(v, 2),
                             name || t("KRA", "KRA"),
@@ -2117,7 +2168,7 @@ export default function Dashboard() {
                         <div
                           key={`weight-legend-${item?.kraId || index}`}
                           className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
-                          title={localizeString(item?.kraName || "", language)}
+                          title={item?.displayKraName || ""}
                         >
                           <span
                             className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
@@ -2127,7 +2178,7 @@ export default function Dashboard() {
                           />
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
-                              {localizeString(item?.kraName || "-", language)}
+                              {item?.displayKraName || "-"}
                             </p>
                             <p className="text-[11px] font-bold text-slate-500 mt-0.5">
                               {formatDisplayPercentage(item?.displayWeight, 2)}
@@ -2169,89 +2220,134 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   displayCorpKraPies.map((corp, corpIdx) => {
-                    const corpPieLabel = createNonOverlappingPieLabel();
-                    const borderColors = [
-                      "border-indigo-200",
-                      "border-violet-200",
-                      "border-cyan-200",
-                      "border-amber-200",
-                      "border-emerald-200",
-                      "border-rose-200",
-                    ];
-                    const dotColors = [
-                      "bg-indigo-500",
-                      "bg-violet-500",
-                      "bg-cyan-500",
-                      "bg-amber-500",
-                      "bg-emerald-500",
-                      "bg-rose-500",
-                    ];
+                    const slices = corp?.data || [];
+                    const corpPieLabel = createNonOverlappingPieLabel({
+                      minGap: 13,
+                    });
+                    const chartSlices = slices.map((slice) => {
+                      const raw = Number(slice?.displaySlicePercentage || 0);
+                      return {
+                        ...slice,
+                        chartSlicePercentage: raw > 0 ? raw : 0.08,
+                      };
+                    });
                     return (
                       <div
-                        key={corp.corporationId}
-                        className={`border ${borderColors[corpIdx % borderColors.length]} rounded-2xl p-5 bg-white/80 backdrop-blur-sm hover:shadow-lg transition-all duration-300`}
+                        key={corp.corporationId || corpIdx}
+                        className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm hover:shadow-md transition-all duration-300"
                       >
-                        <h4 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
-                          <span
-                            className={`w-3 h-3 rounded-full ${dotColors[corpIdx % dotColors.length]} inline-block`}
-                          ></span>
-                          {corp.corporationName}
-                        </h4>
-                        <ResponsiveContainer width="100%" height={320}>
-                          <PieChart>
-                            <Pie
-                              data={corp.data || []}
-                              dataKey="displaySlicePercentage"
-                              nameKey="kraName"
-                              cx="50%"
-                              cy="45%"
-                              startAngle={90}
-                              endAngle={-270}
-                              innerRadius={40}
-                              outerRadius={90}
-                              paddingAngle={2}
-                              stroke="none"
-                              label={corpPieLabel.label}
-                              labelLine={corpPieLabel.labelLine}
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <h4 className="text-sm md:text-base font-extrabold text-slate-700 truncate">
+                            {corp.corporationName}
+                          </h4>
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-slate-200/70 px-2 py-1 rounded-full">
+                            {t("वेटेड योगदान", "Weighted Contribution")}
+                          </span>
+                        </div>
+
+                        <div className="rounded-xl bg-white border border-slate-100 p-2">
+                          <ResponsiveContainer width="100%" height={280}>
+                            <PieChart
+                              margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
                             >
-                              {(corp.data || []).map((slice, index) => (
-                                <Cell
-                                  key={`cell-${corp.corporationId}-${index}`}
-                                  fill={getKraColor(slice)}
+                              <Pie
+                                data={chartSlices}
+                                dataKey="chartSlicePercentage"
+                                nameKey="kraName"
+                                cx="50%"
+                                cy="50%"
+                                startAngle={90}
+                                endAngle={-270}
+                                innerRadius={55}
+                                outerRadius={108}
+                                paddingAngle={3}
+                                stroke="none"
+                                label={corpPieLabel.label}
+                                labelLine={corpPieLabel.labelLine}
+                              >
+                                {slices.map((slice, index) => (
+                                  <Cell
+                                    key={`cell-${corp.corporationId}-${index}`}
+                                    fill={
+                                      Number(
+                                        slice?.displaySlicePercentage || 0,
+                                      ) <= 0
+                                        ? "#000000"
+                                        : getKraColor(slice)
+                                    }
+                                  />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                contentStyle={{
+                                  borderRadius: "12px",
+                                  border: "none",
+                                  boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
+                                  fontSize: 12,
+                                }}
+                                formatter={(v, _n, props) => {
+                                  const p = props?.payload;
+                                  const contribution = capPercentage(
+                                    p?.displaySlicePercentage,
+                                  );
+                                  return [
+                                    formatDisplayPercentage(contribution, 2),
+                                    t(
+                                      "वेटेड योगदान टक्केवारी",
+                                      "Weighted Contribution Percentage",
+                                    ),
+                                  ];
+                                }}
+                                labelFormatter={(label) =>
+                                  getDisplayKraLabel(label)
+                                }
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 mt-1">
+                          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                            {t("KRA तपशील", "KRA Details")}
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {slices.map((slice, index) => (
+                              <div
+                                key={`corp-kra-detail-${corp.corporationId || corpIdx}-${slice?.kraId || index}`}
+                                className="flex items-start gap-2 rounded-lg bg-white border border-slate-100 px-2.5 py-2"
+                                title={slice?.displayKraName || ""}
+                              >
+                                <span
+                                  className="mt-1 inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                                  style={{
+                                    backgroundColor:
+                                      Number(
+                                        slice?.displaySlicePercentage || 0,
+                                      ) <= 0
+                                        ? "#000000"
+                                        : getKraColor(slice),
+                                  }}
                                 />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              contentStyle={{
-                                borderRadius: "12px",
-                                border: "none",
-                                boxShadow: "0 8px 20px rgb(0 0 0 / 0.08)",
-                                fontSize: 12,
-                              }}
-                              formatter={(v, _n, props) => {
-                                const p = props?.payload;
-                                const ach = capPercentage(
-                                  p?.displayAchievementPercentage,
-                                );
-                                const w = capPercentage(p?.displayWeight);
-                                return [
-                                  `${formatDisplayPercentage(v, 2)} (Ach ${formatDisplayPercentage(ach, 1)}, W ${formatDisplayPercentage(w, 1)})`,
-                                  t("स्कोअर शेअर", "Score share"),
-                                ];
-                              }}
-                              labelFormatter={(label) =>
-                                localizeString(label, language)
-                              }
-                            />
-                            <Legend
-                              iconType="circle"
-                              wrapperStyle={{ fontSize: 11, fontWeight: 600 }}
-                              formatter={(value) =>
-                                localizeString(value, language)
-                              }
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-semibold text-slate-700 leading-snug break-words">
+                                    {slice?.displayKraName || "-"}
+                                  </p>
+                                  <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                                    {t(
+                                      "वेटेड योगदान टक्केवारी",
+                                      "Weighted Contribution Percentage",
+                                    )}
+                                    :{" "}
+                                    {formatDisplayPercentage(
+                                      slice?.displaySlicePercentage,
+                                      2,
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     );
                   })
@@ -2336,15 +2432,29 @@ export default function Dashboard() {
                     {t("KRA परफॉर्मर्स", "KRA Performers")}
                   </label>
                   <select
-                    value={`${comparativeFilters.sortOrder}-${comparativeFilters.topN}`}
+                    value={
+                      comparativeFilters.topN === "all"
+                        ? "all"
+                        : `${comparativeFilters.sortOrder}-${comparativeFilters.topN}`
+                    }
                     onChange={(e) =>
-                      setComparativeFilters((prev) => ({
-                        ...prev,
-                        sortOrder: e.target.value.startsWith("bottom")
-                          ? "bottom"
-                          : "top",
-                        topN: e.target.value.endsWith("10") ? "10" : "5",
-                      }))
+                      setComparativeFilters((prev) => {
+                        if (e.target.value === "all") {
+                          return {
+                            ...prev,
+                            sortOrder: "top",
+                            topN: "all",
+                          };
+                        }
+
+                        return {
+                          ...prev,
+                          sortOrder: e.target.value.startsWith("bottom")
+                            ? "bottom"
+                            : "top",
+                          topN: e.target.value.endsWith("10") ? "10" : "5",
+                        };
+                      })
                     }
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
                   >
