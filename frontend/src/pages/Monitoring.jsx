@@ -1,55 +1,48 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { corporationApi, dashboardApi, kraEntryApi } from "../services/api";
+import {
+  circleApi,
+  corporationApi,
+  divisionApi,
+  kraApi,
+  kraEntryApi,
+  regionApi,
+} from "../services/api";
 import { generateKraYears } from "../utils/helpers";
-import * as XLSX from "xlsx";
 import { useLanguage } from "../i18n/LanguageContext";
 import { useAuth } from "../auth/AuthContext";
+import { localizeName } from "../utils/localize";
 
-function decodeJwtPayload(token) {
-  try {
-    const payload = String(token || "").split(".")[1];
-    if (!payload) return null;
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = atob(normalized);
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
-}
+const DEFAULT_KRA_OPTIONS = [
+  { id: 1, name: "KRA 1 - प्रत्यक्ष सिंचन" },
+  { id: 2, name: "KRA 2 - पाणीपट्टी वसुली" },
+  { id: 3, name: "KRA 3 - प्रकल्प पूर्ण" },
+  { id: 4, name: "KRA 4 - सिंचन निर्मिती" },
+  { id: 5, name: "KRA 5 - पाणीसाठा निर्मिती" },
+  { id: 6, name: "KRA 6 - लाभक्षेत्र हस्तांतरण" },
+  { id: 7, name: "KRA 7 - अवशिष्ट प्रकल्प" },
+];
 
-function normalizeIdentity(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/\s+/g, "")
-    .trim();
-}
+const MONTH_NAMES_MARATHI = {
+  1: "जानेवारी",
+  2: "फेब्रुवारी",
+  3: "मार्च",
+  4: "एप्रिल",
+  5: "मे",
+  6: "जून",
+  7: "जुलै",
+  8: "ऑगस्ट",
+  9: "सप्टेंबर",
+  10: "ऑक्टोबर",
+  11: "नोव्हेंबर",
+  12: "डिसेंबर",
+};
 
-function Card({ title, titleMr, children }) {
-  const { t } = useLanguage();
-  const displayTitle = titleMr ? t(titleMr, title) : title;
-
-  return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
-      <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700">
-        <h2 className="text-lg font-bold text-white">{displayTitle}</h2>
-      </div>
-      <div className="p-6">{children}</div>
-    </div>
-  );
-}
-
-function formatNumber(value) {
-  const num = Number(value) || 0;
-  return num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-}
-
-function sumNumberField(kras, key) {
+const sumNumberField = (kras, key) => {
   if (!Array.isArray(kras)) return 0;
   return kras.reduce((sum, item) => sum + (Number(item?.[key]) || 0), 0);
-}
+};
 
-function getSelectedKraIds(entry) {
+const getSelectedKraIds = (entry) => {
   if (!entry) return [];
 
   if (Array.isArray(entry.selectedKraIds) && entry.selectedKraIds.length > 0) {
@@ -71,373 +64,244 @@ function getSelectedKraIds(entry) {
     : [];
 
   return [...new Set(fromKras)].sort((a, b) => a - b);
-}
-
-// Marathi month names for export
-const MONTH_NAMES_MARATHI = {
-  1: "जानेवारी",
-  2: "फेब्रुवारी",
-  3: "मार्च",
-  4: "एप्रिल",
-  5: "मे",
-  6: "जून",
-  7: "जुलै",
-  8: "ऑगस्ट",
-  9: "सप्टेंबर",
-  10: "ऑक्टोबर",
-  11: "नोव्हेंबर",
-  12: "डिसेंबर",
 };
 
-// KRA ID to name mapping (Marathi names as in original Excel)
-const KRA_NAMES = {
-  1: "प्रकल्पाचे लाभक्षेत्रात प्रत्यक्ष सिंचन करणे (लक्ष हेक्टर)",
-  2: "सिंचन व बिगर सिंचन पाणीपट्टी वसुली करणे (रुपये लक्ष)",
-  3: "सन {year} मध्ये पूर्ण करावयाचे प्रकल्प (संख्या)",
-  4: "सिंचन निर्मिती (हेक्टर)",
-  5: "पाणीसाठा निर्मिती (दलघमी)",
-  6: "पाणी वापर संस्थांना लाभक्षेत्र हस्तांतरण करणे (हेक्टर)",
-  7: "अवशिष्ट मधील प्रकल्प पूर्ण करणे (संख्या)",
-};
-
-// Default weights for KRAs
-const KRA_WEIGHTS = {
-  1: 15,
-  2: 15,
-  3: 20,
-  4: 15,
-  5: 20,
-  6: 10,
-  7: 5,
-};
-
-function getKraName(kraId, kraYear) {
-  const name = KRA_NAMES[kraId] || `KRA ${kraId}`;
-  if (kraId === 3 && kraYear) {
-    // Replace {year} with the actual year in Marathi format
-    const yearParts = kraYear.split("-");
-    const marathiYear = `२०${yearParts[1] || "25"}-${String(Number(yearParts[1] || 25) + 1).slice(-2)}`;
-    return name.replace("{year}", marathiYear);
+function decodeJwtPayload(token) {
+  try {
+    const payload = String(token || "").split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = atob(normalized);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
   }
-  return name.replace("{year}", "२०२५-२६");
 }
 
-function formatDateForExcel(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  // Format: DD/MM/YYYY
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+function normalizeIdentity(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .trim();
 }
 
-// KRA options for filter dropdown
-const KRA_OPTIONS = [
-  { id: 1, name: "KRA 1 - प्रत्यक्ष सिंचन" },
-  { id: 2, name: "KRA 2 - पाणीपट्टी वसुली" },
-  { id: 3, name: "KRA 3 - प्रकल्प पूर्ण" },
-  { id: 4, name: "KRA 4 - सिंचन निर्मिती" },
-  { id: 5, name: "KRA 5 - पाणीसाठा निर्मिती" },
-  { id: 6, name: "KRA 6 - लाभक्षेत्र हस्तांतरण" },
-  { id: 7, name: "KRA 7 - अवशिष्ट प्रकल्प" },
-];
+const mapKraDocToOption = (kraDoc) => {
+  const number =
+    Number(kraDoc?.kraNumber) || Number(kraDoc?.sortOrder) || undefined;
+  const id = Number.isFinite(number) ? number : undefined;
+
+  const mrName = String(kraDoc?.name || "").trim();
+  const enName = String(kraDoc?.nameEnglish || "").trim();
+  const displayName = mrName || enName || "KRA";
+
+  return {
+    id,
+    name: id ? `KRA ${id} - ${displayName}` : displayName,
+  };
+};
+
+function InfoItem({ label, value }) {
+  return (
+    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="text-sm font-semibold text-slate-800 mt-1 break-words">
+        {value || "-"}
+      </p>
+    </div>
+  );
+}
 
 export default function Monitoring() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { user, token } = useAuth();
-  const tokenPayload = useMemo(() => decodeJwtPayload(token), [token]);
 
-  const effectiveRole = user?.role || tokenPayload?.role || "user";
+  const tokenPayload = useMemo(() => decodeJwtPayload(token), [token]);
   const effectiveMobile =
     user?.mobileNumber || tokenPayload?.mobileNumber || "";
   const effectiveFullName = user?.fullName || "";
 
-  const isPrivilegedUser =
-    effectiveRole === "admin" || effectiveRole === "superadmin";
   const [corporations, setCorporations] = useState([]);
+  const [regions, setRegions] = useState([]);
+  const [circles, setCircles] = useState([]);
+  const [divisions, setDivisions] = useState([]);
+  const [kraOptions, setKraOptions] = useState(DEFAULT_KRA_OPTIONS);
+
   const [filters, setFilters] = useState({
     corporation: "",
+    region: "",
+    circle: "",
+    division: "",
     kraYear: "",
     kra: "",
+    search: "",
   });
-  const [activeSection, setActiveSection] = useState("entries");
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  const [summary, setSummary] = useState(null);
-  const [byCorporation, setByCorporation] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState("");
-
-  const [myEntries, setMyEntries] = useState([]);
+  const [scopeMode, setScopeMode] = useState("my-desk");
+  const [entries, setEntries] = useState([]);
+  const [viewingEntry, setViewingEntry] = useState(null);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState("");
   const [entriesLastRefresh, setEntriesLastRefresh] = useState(new Date());
-  const [entrySearch, setEntrySearch] = useState("");
   const [entryPage, setEntryPage] = useState(1);
 
   const kraYears = useMemo(() => generateKraYears(), []);
 
   useEffect(() => {
-    const loadCorporations = async () => {
+    const loadMasters = async () => {
       try {
-        const res = await corporationApi.getAll();
-        setCorporations(res.data?.data || []);
-      } catch (e) {
-        // keep non-blocking
+        const [corpRes, kraRes] = await Promise.all([
+          corporationApi.getAll(),
+          kraApi.getAll(),
+        ]);
+
+        setCorporations(
+          Array.isArray(corpRes?.data?.data) ? corpRes.data.data : [],
+        );
+
+        const data = Array.isArray(kraRes?.data?.data) ? kraRes.data.data : [];
+        const options = data
+          .map(mapKraDocToOption)
+          .filter((o) => Number.isFinite(Number(o.id)))
+          .sort((a, b) => Number(a.id) - Number(b.id));
+
+        setKraOptions(options.length > 0 ? options : DEFAULT_KRA_OPTIONS);
+      } catch {
+        setKraOptions(DEFAULT_KRA_OPTIONS);
       }
     };
 
-    loadCorporations();
+    loadMasters();
   }, []);
 
   useEffect(() => {
-    fetchMonitoringData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.corporation, filters.kraYear, filters.kra]);
+    const loadRegions = async () => {
+      if (!filters.corporation) {
+        setRegions([]);
+        setCircles([]);
+        setDivisions([]);
+        return;
+      }
+      try {
+        const res = await regionApi.getByCorporation(filters.corporation);
+        setRegions(Array.isArray(res?.data?.data) ? res.data.data : []);
+      } catch {
+        setRegions([]);
+      }
+    };
+
+    loadRegions();
+  }, [filters.corporation]);
 
   useEffect(() => {
-    setEntryPage(1);
-  }, [entrySearch, filters.corporation, filters.kraYear, filters.kra]);
+    const loadCircles = async () => {
+      if (!filters.region) {
+        setCircles([]);
+        setDivisions([]);
+        return;
+      }
+      try {
+        const res = await circleApi.getByRegion(filters.region);
+        setCircles(Array.isArray(res?.data?.data) ? res.data.data : []);
+      } catch {
+        setCircles([]);
+      }
+    };
+
+    loadCircles();
+  }, [filters.region]);
 
   useEffect(() => {
-    if (activeSection !== "entries") return;
-    fetchMyEntries();
+    const loadDivisions = async () => {
+      if (!filters.circle) {
+        setDivisions([]);
+        return;
+      }
+      try {
+        const res = await divisionApi.getByCircle(filters.circle);
+        setDivisions(Array.isArray(res?.data?.data) ? res.data.data : []);
+      } catch {
+        setDivisions([]);
+      }
+    };
+
+    loadDivisions();
+  }, [filters.circle]);
+
+  useEffect(() => {
+    fetchEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    activeSection,
     filters.corporation,
+    filters.region,
+    filters.circle,
+    filters.division,
     filters.kraYear,
     filters.kra,
-    effectiveRole,
-    effectiveMobile,
-    effectiveFullName,
   ]);
 
-  useEffect(() => {
-    if (activeSection !== "entries") return;
-
-    const timer = setInterval(() => {
-      fetchMyEntries({ silent: true });
-    }, 10000);
-
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeSection,
-    filters.corporation,
-    filters.kraYear,
-    filters.kra,
-    effectiveRole,
-    effectiveMobile,
-    effectiveFullName,
-  ]);
-
-  const fetchMonitoringData = async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const params = { periodMode: "all" };
-      if (filters.corporation) params.corporation = filters.corporation;
-      if (filters.kraYear) params.kraYear = filters.kraYear;
-      if (filters.kra) params.kra = filters.kra;
-
-      const [summaryRes, corpRes] = await Promise.all([
-        dashboardApi.getSummary(params),
-        dashboardApi.getByCorporation(params),
-      ]);
-
-      setSummary(summaryRes.data?.data || {});
-      setByCorporation(corpRes.data?.data || []);
-      setLastRefresh(new Date());
-    } catch (e) {
-      setError(e?.response?.data?.message || "Failed to load report data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchMyEntries = async ({ silent = false } = {}) => {
+  const fetchEntries = async ({ silent = false } = {}) => {
     if (!silent) setEntriesLoading(true);
     setEntriesError("");
 
     try {
       const params = {};
       if (filters.corporation) params.corporation = filters.corporation;
+      if (filters.region) params.region = filters.region;
+      if (filters.circle) params.circle = filters.circle;
+      if (filters.division) params.division = filters.division;
       if (filters.kraYear) params.kraYear = filters.kraYear;
       if (filters.kra) params.kra = filters.kra;
 
       const res = await kraEntryApi.getAll(params);
-      const allEntries = Array.isArray(res.data?.data) ? res.data.data : [];
+      const allEntries = Array.isArray(res?.data?.data) ? res.data.data : [];
 
-      const fullName = normalizeIdentity(effectiveFullName);
-      const mobile = normalizeIdentity(effectiveMobile);
-
-      const mine = allEntries.filter((entry) => {
-        const submittedBy = normalizeIdentity(entry?.submittedBy);
-        const contactNumber = normalizeIdentity(entry?.contactNumber);
-
-        if (!submittedBy && !contactNumber) return false;
-        return (
-          (fullName && submittedBy.includes(fullName)) ||
-          (mobile && submittedBy.includes(mobile)) ||
-          (mobile && contactNumber.includes(mobile))
-        );
-      });
-
-      const selectedKraId = Number(filters.kra);
-      const applyStrictKraFilter = (entries) => {
-        if (!Number.isFinite(selectedKraId) || selectedKraId <= 0) {
-          return entries;
-        }
-        return entries.filter((entry) =>
-          getSelectedKraIds(entry).includes(selectedKraId),
-        );
-      };
-
-      setMyEntries(applyStrictKraFilter(isPrivilegedUser ? allEntries : mine));
+      setEntries(allEntries);
       setEntriesLastRefresh(new Date());
     } catch (e) {
-      setEntriesError(
-        e?.response?.data?.message || "Failed to load your entries",
-      );
+      setEntriesError(e?.response?.data?.message || "Failed to load entries");
     } finally {
       if (!silent) setEntriesLoading(false);
     }
   };
 
-  // Export all KRA entries to Excel in the original format
-  const exportToExcel = async () => {
-    setExporting(true);
-    setError("");
+  const myEntries = useMemo(() => {
+    const fullName = normalizeIdentity(effectiveFullName);
+    const mobile = normalizeIdentity(effectiveMobile);
 
-    try {
-      // Fetch all entries with current filters
-      const params = {};
-      if (filters.corporation) params.corporation = filters.corporation;
-      if (filters.kraYear) params.kraYear = filters.kraYear;
-      if (filters.kra) params.kra = filters.kra;
+    return entries.filter((entry) => {
+      const submittedBy = normalizeIdentity(entry?.submittedBy);
+      const contactNumber = normalizeIdentity(entry?.contactNumber);
 
-      const res = await kraEntryApi.getAll(params);
-      const entries = res.data?.data || [];
+      if (!submittedBy && !contactNumber) return false;
+      return (
+        (fullName && submittedBy.includes(fullName)) ||
+        (mobile && submittedBy.includes(mobile)) ||
+        (mobile && contactNumber.includes(mobile))
+      );
+    });
+  }, [entries, effectiveFullName, effectiveMobile]);
 
-      if (entries.length === 0) {
-        setError(
-          t(
-            "निवडलेल्या फिल्टरसाठी निर्यात करण्यासाठी डेटा नाही.",
-            "No data to export for selected filters.",
-          ),
-        );
-        setExporting(false);
-        return;
-      }
+  const scopedEntries = useMemo(
+    () => (scopeMode === "team-stream" ? entries : myEntries),
+    [scopeMode, entries, myEntries],
+  );
 
-      // Flatten entries: each KRA in a monthly doc becomes one row
-      const rows = [];
+  const searchFilteredEntries = useMemo(() => {
+    const query = String(filters.search || "")
+      .trim()
+      .toLowerCase();
+    if (!query) return scopedEntries;
 
-      for (const entry of entries) {
-        const corpName = entry.corporation?.name || "";
-        const regionName = entry.region?.name || "";
-        const circleName = entry.circle?.name || "";
-        const divisionName = entry.division?.name || "";
-        const kraYear = entry.kraYear || "";
-        const achievementDate = formatDateForExcel(entry.achievementDate);
-        const achievementMonth = entry.achievementMonth || 1;
-        const achievementYear = entry.achievementYear || 2025;
-        const contactNumber = entry.contactNumber || "";
-        const remarks = entry.remarks || "";
-
-        const krasArray = Array.isArray(entry.kras) ? entry.kras : [];
-
-        for (const kra of krasArray) {
-          const kraId = kra.kraId || 1;
-          const annualTarget = Number(kra.annualTarget) || 0;
-          const kraAchievement = Number(kra.kraAchievement) || 0;
-
-          // Skip all-zero KRAs
-          if (annualTarget === 0 && kraAchievement === 0) continue;
-
-          const kraName = kra.kraName || getKraName(kraId, kraYear);
-          const weight = KRA_WEIGHTS[kraId] || 0;
-          const monthName = `${MONTH_NAMES_MARATHI[achievementMonth]} ${achievementYear}`;
-
-          rows.push({
-            "महामंडळ (Corporation)": corpName,
-            Region_1: regionName,
-            Circle: circleName,
-            Division: divisionName,
-            "फलनिष्पत्तीची  क्षेत्रे KRA": kraName,
-            "फलनिष्पत्तीची  क्षेत्रे (KRA) वर्ष": kraYear,
-            "KRA वार्षिक उद्दिष्ट": annualTarget,
-            "KRA साध्य": kraAchievement,
-            Weightage: weight,
-            "KRA महिना": monthName,
-            "महिन्याचे साध्य KRA ( तारीख)": achievementDate,
-            "Contact Number ( Assistant SE )": contactNumber,
-            "शेरा / अडचणी": remarks,
-          });
-        }
-      }
-
-      if (rows.length === 0) {
-        setError(
-          t(
-            "निर्यात करण्यासाठी KRA डेटा आढळला नाही.",
-            "No KRA data found to export.",
-          ),
-        );
-        setExporting(false);
-        return;
-      }
-
-      // Create workbook
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-
-      // Set column widths for readability
-      worksheet["!cols"] = [
-        { wch: 30 }, // Corporation
-        { wch: 30 }, // Region
-        { wch: 25 }, // Circle
-        { wch: 65 }, // Division
-        { wch: 55 }, // KRA Name
-        { wch: 15 }, // KRA Year
-        { wch: 18 }, // Annual Target
-        { wch: 12 }, // Achievement
-        { wch: 10 }, // Weightage
-        { wch: 18 }, // Month
-        { wch: 15 }, // Date
-        { wch: 15 }, // Contact
-        { wch: 30 }, // Remarks
-      ];
-
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Form Responses 1");
-
-      // Generate filename
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const filename = `KRA_Report_Sheet_${dateStr}.xlsx`;
-
-      // Download
-      XLSX.writeFile(workbook, filename);
-    } catch (e) {
-      setError(e?.response?.data?.message || "Failed to export data.");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const resetFilters = () =>
-    setFilters({ corporation: "", kraYear: "", kra: "" });
-
-  const filteredMyEntries = useMemo(() => {
-    const query = entrySearch.trim().toLowerCase();
-    if (!query) return myEntries;
-
-    return myEntries.filter((entry) => {
+    return scopedEntries.filter((entry) => {
       const selectedIds = getSelectedKraIds(entry).join(",");
       return [
         entry?.corporation?.name,
         entry?.corporation?.code,
+        entry?.region?.name,
+        entry?.circle?.name,
+        entry?.division?.name,
         entry?.kraYear,
         entry?.remarks,
         entry?.contactNumber,
@@ -447,19 +311,23 @@ export default function Monitoring() {
         .map((v) => String(v || "").toLowerCase())
         .some((v) => v.includes(query));
     });
-  }, [myEntries, entrySearch]);
+  }, [scopedEntries, filters.search]);
 
   const PAGE_SIZE = 20;
   const totalEntryPages = Math.max(
     1,
-    Math.ceil(filteredMyEntries.length / PAGE_SIZE),
+    Math.ceil(searchFilteredEntries.length / PAGE_SIZE),
   );
 
-  const paginatedMyEntries = useMemo(() => {
+  const paginatedEntries = useMemo(() => {
     const safePage = Math.min(Math.max(entryPage, 1), totalEntryPages);
     const start = (safePage - 1) * PAGE_SIZE;
-    return filteredMyEntries.slice(start, start + PAGE_SIZE);
-  }, [filteredMyEntries, entryPage, totalEntryPages]);
+    return searchFilteredEntries.slice(start, start + PAGE_SIZE);
+  }, [searchFilteredEntries, entryPage, totalEntryPages]);
+
+  useEffect(() => {
+    setEntryPage(1);
+  }, [filters.search, scopeMode]);
 
   useEffect(() => {
     if (entryPage > totalEntryPages) {
@@ -467,10 +335,22 @@ export default function Monitoring() {
     }
   }, [entryPage, totalEntryPages]);
 
+  const clearFilters = () => {
+    setFilters({
+      corporation: "",
+      region: "",
+      circle: "",
+      division: "",
+      kraYear: "",
+      kra: "",
+      search: "",
+    });
+    setEntryPage(1);
+  };
+
   return (
     <div className="min-h-[calc(100vh-80px)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
           <div className="px-6 py-5 bg-gradient-to-r from-blue-700 to-indigo-700">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -480,530 +360,546 @@ export default function Monitoring() {
                 </h1>
                 <p className="text-sm text-white/80 mt-1">
                   {t(
-                    "KRA अहवाल सारांश, फिल्टर आणि जलद कृती.",
-                    "KRA report summary, filters, and quick actions.",
+                    "प्रकल्प अहवालासाठी नोंदींचे एकत्रित दृश्य.",
+                    "Unified entries view for the project report section.",
                   )}
                 </p>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                <Link
-                  to="/dashboard"
-                  className="px-4 py-2 bg-white text-blue-700 font-semibold rounded-xl hover:bg-blue-50 transition-colors"
-                >
-                  📊 {t("डॅशबोर्ड उघडा", "Open Dashboard")}
-                </Link>
-                <Link
-                  to="/data-entry"
-                  className="px-4 py-2 bg-white/10 text-white font-semibold rounded-xl border border-white/30 hover:bg-white/15 transition-colors"
-                >
-                  📝 {t("डेटा एंट्री", "Data Entry")}
-                </Link>
-              </div>
+              <button
+                onClick={() => fetchEntries()}
+                className="px-4 py-2 bg-white text-indigo-800 font-semibold rounded-xl hover:bg-indigo-50 transition-colors"
+              >
+                🔄 {t("आत्ता रिफ्रेश करा", "Refresh Now")}
+              </button>
             </div>
           </div>
 
           <div className="px-6 py-5">
-            <div className="mb-4 inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+            <div className="flex flex-wrap gap-2 mb-4">
               <button
-                onClick={() => setActiveSection("entries")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  activeSection === "entries"
-                    ? "bg-white text-indigo-700 shadow"
-                    : "text-slate-600 hover:text-slate-800"
+                onClick={() => setScopeMode("my-desk")}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  scopeMode === "my-desk"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {t("📝 सर्व नोंदी", "📝 All Entries")}
+                {t("🧾 माझे डेस्क", "🧾 My Desk")}
               </button>
               <button
-                onClick={() => setActiveSection("summary")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  activeSection === "summary"
-                    ? "bg-white text-indigo-700 shadow"
-                    : "text-slate-600 hover:text-slate-800"
+                onClick={() => setScopeMode("team-stream")}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  scopeMode === "team-stream"
+                    ? "bg-indigo-600 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {t("📊 अहवाल सारांश", "📊 Report Summary")}
+                {t("🌐 टीम स्ट्रीम", "🌐 Team Stream")}
               </button>
             </div>
 
-            <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">
-                    {t("महामंडळ", "Corporation")}
-                  </label>
-                  <select
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                    value={filters.corporation}
-                    onChange={(e) =>
-                      setFilters((f) => ({ ...f, corporation: e.target.value }))
-                    }
-                  >
-                    <option value="">
-                      {t("सर्व महामंडळे", "All Corporations")}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("शोधा", "Search")}
+                </label>
+                <input
+                  type="text"
+                  placeholder={t(
+                    "KRA, टिप्पणी, संपर्क...",
+                    "KRA, remarks, contact...",
+                  )}
+                  value={filters.search}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, search: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("महामंडळ", "Corporation")}
+                </label>
+                <select
+                  value={filters.corporation}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      corporation: e.target.value,
+                      region: "",
+                      circle: "",
+                      division: "",
+                    }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">
+                    {t("सर्व महामंडळे", "All Corporations")}
+                  </option>
+                  {corporations.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {localizeName(c, language)}
                     </option>
-                    {corporations.map((c) => (
-                      <option key={c._id} value={c._id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">
-                    {t("KRA वर्ष", "KRA Year")}
-                  </label>
-                  <select
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                    value={filters.kraYear}
-                    onChange={(e) =>
-                      setFilters((f) => ({ ...f, kraYear: e.target.value }))
-                    }
-                  >
-                    <option value="">{t("सर्व वर्षे", "All Years")}</option>
-                    {kraYears.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">
-                    {t("KRA", "KRA")}
-                  </label>
-                  <select
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                    value={filters.kra}
-                    onChange={(e) =>
-                      setFilters((f) => ({ ...f, kra: e.target.value }))
-                    }
-                  >
-                    <option value="">{t("सर्व KRA", "All KRAs")}</option>
-                    {KRA_OPTIONS.map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  ))}
+                </select>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={fetchMonitoringData}
-                  className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg"
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("प्रदेश", "Region")}
+                </label>
+                <select
+                  value={filters.region}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      region: e.target.value,
+                      circle: "",
+                      division: "",
+                    }))
+                  }
+                  disabled={!filters.corporation}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                 >
-                  🔄 {t("रिफ्रेश", "Refresh")}
-                </button>
-                <button
-                  onClick={resetFilters}
-                  className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+                  <option value="">{t("सर्व प्रदेश", "All Regions")}</option>
+                  {regions.map((r) => (
+                    <option key={r._id} value={r._id}>
+                      {localizeName(r, language)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("मंडळ", "Circle")}
+                </label>
+                <select
+                  value={filters.circle}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      circle: e.target.value,
+                      division: "",
+                    }))
+                  }
+                  disabled={!filters.region}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                 >
-                  {t("क्लिअर", "Clear")}
+                  <option value="">{t("सर्व मंडळे", "All Circles")}</option>
+                  {circles.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {localizeName(c, language)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("विभाग", "Division")}
+                </label>
+                <select
+                  value={filters.division}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      division: e.target.value,
+                    }))
+                  }
+                  disabled={!filters.circle}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                >
+                  <option value="">{t("सर्व विभाग", "All Divisions")}</option>
+                  {divisions.map((d) => (
+                    <option key={d._id} value={d._id}>
+                      {localizeName(d, language)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("KRA वर्ष", "KRA Year")}
+                </label>
+                <select
+                  value={filters.kraYear}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, kraYear: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">{t("सर्व वर्षे", "All Years")}</option>
+                  {kraYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  {t("KRA", "KRA")}
+                </label>
+                <select
+                  value={filters.kra}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, kra: e.target.value }))
+                  }
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">{t("सर्व KRA", "All KRAs")}</option>
+                  {kraOptions.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  onClick={clearFilters}
+                  className="w-full px-4 py-2.5 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                  {t("फिल्टर साफ करा", "Clear Filters")}
                 </button>
               </div>
             </div>
 
-            <div className="mt-3 text-xs text-slate-500">
-              Last updated: {lastRefresh.toLocaleTimeString("en-IN")} (manual)
-            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              {t("शेवटचे अपडेट:", "Last updated:")}{" "}
+              {entriesLastRefresh.toLocaleTimeString("en-IN")}
+            </p>
 
-            {error && (
+            {entriesError && (
               <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
-                ❌ {error}
+                ❌ {entriesError}
               </div>
             )}
           </div>
         </div>
 
-        {activeSection === "summary" && (
-          <>
-            {/* Corporation-wise report */}
-            <Card title="Corporation Report" titleMr="महामंडळ-वार अहवाल">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="text-sm text-slate-600">
-                  {t(
-                    "महामंडळानुसार नोंदी आणि कामगिरीचा जलद आढावा.",
-                    "Quick view of entries and performance by corporation.",
-                  )}
-                </div>
-                <button
-                  onClick={exportToExcel}
-                  disabled={exporting || loading}
-                  className="px-4 py-2 bg-green-700 text-white rounded-xl hover:bg-green-800 disabled:opacity-50 transition-colors flex items-center gap-2"
-                >
-                  {exporting ? (
-                    <>
-                      <svg
-                        className="animate-spin h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                        />
-                      </svg>
-                      {t("निर्यात करत आहे...", "Exporting...")}
-                    </>
-                  ) : (
-                    <>📥 {t("एक्सेल निर्यात (XLSX)", "Export Excel (XLSX)")}</>
-                  )}
-                </button>
-              </div>
-
-              <div className="mt-4 overflow-x-auto">
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
+          {entriesLoading ? (
+            <div className="p-8 text-slate-600">
+              {t("नोंदी लोड होत आहेत...", "Loading entries...")}
+            </div>
+          ) : searchFilteredEntries.length === 0 ? (
+            <div className="p-10 text-center">
+              <div className="text-5xl mb-3">📭</div>
+              <p className="text-slate-700 font-semibold">
+                {t("नोंदी आढळल्या नाहीत", "No entries found")}
+              </p>
+              <p className="text-slate-500 text-sm mt-1">
+                {t(
+                  "फिल्टर/शोध बदलून पुन्हा प्रयत्न करा.",
+                  "Try changing filters/search and refresh.",
+                )}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
+                  <thead className="bg-gradient-to-r from-slate-800 to-slate-700">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
                         {t("महामंडळ", "Corporation")}
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        {t("नोंदी", "Entries")}
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                        {t("KRA", "KRA")}
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                        {t("वर्ष", "Year")}
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">
                         {t("लक्ष्य", "Target")}
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">
                         {t("साध्य", "Achievement")}
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        %
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                        {t("महिना/वर्ष", "Month/Year")}
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
+                        {t("सबमिट केले", "Submitted By")}
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">
+                        {t("क्रिया", "Actions")}
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {loading ? (
-                      <tr>
-                        <td className="px-4 py-5 text-slate-500" colSpan={5}>
-                          {t("लोड होत आहे...", "Loading...")}
-                        </td>
-                      </tr>
-                    ) : byCorporation.length === 0 ? (
-                      <tr>
-                        <td className="px-4 py-5 text-slate-500" colSpan={5}>
-                          {t(
-                            "निवडलेल्या फिल्टरसाठी डेटा नाही.",
-                            "No data for selected filters.",
-                          )}
-                        </td>
-                      </tr>
-                    ) : (
-                      byCorporation.map((c) => {
-                        const target = Number(c.totalTarget) || 0;
-                        const achievement = Number(c.totalAchievement) || 0;
-                        const pct =
-                          target > 0 ? (achievement / target) * 100 : 0;
+                    {paginatedEntries.map((entry, idx) => {
+                      const totalTarget = sumNumberField(
+                        entry.kras,
+                        "annualTarget",
+                      );
+                      const totalAchievement = sumNumberField(
+                        entry.kras,
+                        "kraAchievement",
+                      );
+                      const selectedIds = getSelectedKraIds(entry);
 
-                        const pill =
-                          pct >= 80
-                            ? "bg-green-100 text-green-800"
-                            : pct >= 50
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-red-100 text-red-800";
-
-                        return (
-                          <tr
-                            key={c.corporationId || c._id}
-                            className="hover:bg-slate-50"
-                          >
-                            <td className="px-4 py-3 font-semibold text-slate-800">
-                              {c.corporationCode || c._id || "N/A"}
-                            </td>
-                            <td className="px-4 py-3 text-right text-slate-700">
-                              {(Number(c.count) || 0).toLocaleString("en-IN")}
-                            </td>
-                            <td className="px-4 py-3 text-right text-slate-700">
-                              {formatNumber(target)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-slate-700">
-                              {formatNumber(achievement)}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span
-                                className={`px-2.5 py-1 rounded-full text-xs font-bold ${pill}`}
-                              >
-                                {pct.toFixed(1)}%
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                      return (
+                        <tr
+                          key={entry._id}
+                          className={`hover:bg-slate-50 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
+                        >
+                          <td className="px-4 py-3">
+                            <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">
+                              {entry?.corporation?.code ||
+                                entry?.corporationName ||
+                                "N/A"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="max-w-[240px]">
+                              <p className="text-sm font-medium text-slate-700 truncate">
+                                {selectedIds.length > 0
+                                  ? `KRAs: ${selectedIds.join(", ")}`
+                                  : "KRAs: -"}
+                              </p>
+                              <p className="text-xs text-slate-400 truncate">
+                                {selectedIds.length > 0
+                                  ? `${selectedIds.length} selected`
+                                  : t("KRA मूल्य नाही", "No KRA values")}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {entry.kraYear || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-slate-700">
+                            {totalTarget.toLocaleString("en-IN")}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-lg font-bold">
+                              {totalAchievement.toLocaleString("en-IN")}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {MONTH_NAMES_MARATHI[entry?.achievementMonth] ||
+                              entry?.achievementMonth}{" "}
+                            {entry?.achievementYear}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            <p className="text-sm">
+                              {entry.submittedBy || "-"}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {entry?.createdAt
+                                ? new Date(entry.createdAt).toLocaleDateString(
+                                    "en-IN",
+                                  )
+                                : "-"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() => setViewingEntry(entry)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                              title={t("तपशील पहा", "View Details")}
+                            >
+                              👁️ {t("पहा", "View")}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-            </Card>
 
-            {/* Report checklist */}
-            <Card title="Report Checklist" titleMr="अहवाल चेकलिस्ट">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-                  <h3 className="font-bold text-slate-800">Data Quality</h3>
-                  <ul className="mt-2 text-sm text-slate-600 space-y-1">
-                    <li>
-                      • Ensure correct Corporation → Region → Circle selection.
-                    </li>
-                    <li>
-                      • Select correct achievement date inside financial year.
-                    </li>
-                    <li>• Fill only the KRAs you want (others stay 0).</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-                  <h3 className="font-bold text-slate-800">Quick Actions</h3>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Link
-                      to="/dashboard"
-                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold"
-                    >
-                      View Charts
-                    </Link>
-                    <Link
-                      to="/data-entry"
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
-                    >
-                      Add Monthly Entry
-                    </Link>
-                    <Link
-                      to="/admin"
-                      className="px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold"
-                    >
-                      Admin Panel
-                    </Link>
-                  </div>
-                  <p className="mt-3 text-xs text-slate-500">
-                    Note: Admin Panel access depends on your role.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          </>
-        )}
-
-        {activeSection === "entries" && (
-          <Card title="All Entries" titleMr="सर्व नोंदी">
-            <div className="space-y-4">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                <div>
-                  <p className="text-sm text-slate-600">
-                    {isPrivilegedUser
-                      ? t(
-                          "सर्व नोंदींचे रिअल-टाइम दृश्य (ऑटो रिफ्रेश: 10 सेकंद)",
-                          "Real-time view of all entries (auto-refresh: 10s)",
-                        )
-                      : t(
-                          "तुमच्या नोंदींचे रिअल-टाइम दृश्य (ऑटो रिफ्रेश: 10 सेकंद)",
-                          "Real-time view of your entries (auto-refresh: 10s)",
-                        )}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {t("शेवटचे अपडेट:", "Last updated:")}{" "}
-                    {entriesLastRefresh.toLocaleTimeString("en-IN")}
-                  </p>
-                </div>
+              <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <p className="text-sm text-slate-600">
+                  {t("दाखवत आहे", "Showing")}{" "}
+                  <strong>{paginatedEntries.length}</strong> {t("पैकी", "of")}{" "}
+                  <strong>{searchFilteredEntries.length}</strong>{" "}
+                  {t("नोंदी", "entries")}
+                </p>
 
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={entrySearch}
-                    onChange={(e) => setEntrySearch(e.target.value)}
-                    placeholder={t(
-                      "शोधा (KRA, टिप्पणी, संपर्क)",
-                      "Search (KRA, remarks, contact)",
-                    )}
-                    className="px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  />
                   <button
-                    onClick={() => fetchMyEntries()}
-                    className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all"
+                    disabled={entryPage === 1}
+                    onClick={() => setEntryPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    🔄 {t("रिफ्रेश", "Refresh")}
+                    ← {t("मागे", "Prev")}
+                  </button>
+                  <span className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold">
+                    {entryPage} / {totalEntryPages}
+                  </span>
+                  <button
+                    disabled={entryPage === totalEntryPages}
+                    onClick={() =>
+                      setEntryPage((p) => Math.min(totalEntryPages, p + 1))
+                    }
+                    className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {t("पुढे", "Next")} →
                   </button>
                 </div>
               </div>
+            </>
+          )}
+        </div>
 
-              {entriesError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
-                  ❌ {entriesError}
-                </div>
-              )}
-
-              <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-                {entriesLoading ? (
-                  <div className="p-6 text-slate-600">
-                    {t("नोंदी लोड होत आहेत...", "Loading entries...")}
-                  </div>
-                ) : filteredMyEntries.length === 0 ? (
-                  <div className="p-10 text-center">
-                    <div className="text-5xl mb-3">📭</div>
-                    <p className="text-slate-700 font-semibold">
-                      {t("नोंदी आढळल्या नाहीत", "No entries found")}
-                    </p>
-                    <p className="text-slate-500 text-sm mt-1">
-                      {t(
-                        "फिल्टर/शोध बदलून पुन्हा प्रयत्न करा.",
-                        "Try changing filters/search and refresh.",
-                      )}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gradient-to-r from-slate-800 to-slate-700">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("महामंडळ", "Corporation")}
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("KRA", "KRA")}
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("वर्ष", "Year")}
-                            </th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("लक्ष्य", "Target")}
-                            </th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("साध्य", "Achievement")}
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("महिना/वर्ष", "Month/Year")}
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">
-                              {t("सबमिट केले", "Submitted By")}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {paginatedMyEntries.map((entry, idx) => {
-                            const totalTarget = sumNumberField(
-                              entry.kras,
-                              "annualTarget",
-                            );
-                            const totalAchievement = sumNumberField(
-                              entry.kras,
-                              "kraAchievement",
-                            );
-                            const selectedIds = getSelectedKraIds(entry);
-
-                            return (
-                              <tr
-                                key={entry._id}
-                                className={`hover:bg-slate-50 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}
-                              >
-                                <td className="px-4 py-3">
-                                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">
-                                    {entry?.corporation?.code ||
-                                      entry?.corporationName ||
-                                      "N/A"}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="max-w-[240px]">
-                                    <p className="text-sm font-medium text-slate-700 truncate">
-                                      {selectedIds.length > 0
-                                        ? `KRAs: ${selectedIds.join(", ")}`
-                                        : "KRAs: -"}
-                                    </p>
-                                    <p className="text-xs text-slate-400 truncate">
-                                      {selectedIds.length > 0
-                                        ? `${selectedIds.length} selected`
-                                        : t("KRA मूल्य नाही", "No KRA values")}
-                                    </p>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-slate-700">
-                                  {entry.kraYear}
-                                </td>
-                                <td className="px-4 py-3 text-right font-medium text-slate-700">
-                                  {totalTarget.toLocaleString("en-IN")}
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-lg font-bold">
-                                    {totalAchievement.toLocaleString("en-IN")}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-slate-600">
-                                  {MONTH_NAMES_MARATHI[
-                                    entry?.achievementMonth
-                                  ] || entry?.achievementMonth}{" "}
-                                  {entry?.achievementYear}
-                                </td>
-                                <td className="px-4 py-3 text-slate-600">
-                                  <p className="text-sm">
-                                    {entry.submittedBy || "-"}
-                                  </p>
-                                  <p className="text-xs text-slate-400">
-                                    {entry?.createdAt
-                                      ? new Date(
-                                          entry.createdAt,
-                                        ).toLocaleDateString("en-IN")
-                                      : "-"}
-                                  </p>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-                      <p className="text-sm text-slate-600">
-                        {t("दाखवत आहे", "Showing")}{" "}
-                        <strong>{paginatedMyEntries.length}</strong>{" "}
-                        {t("पैकी", "of")}{" "}
-                        <strong>{filteredMyEntries.length}</strong>{" "}
-                        {t("नोंदी", "entries")}
-                      </p>
-
-                      <div className="flex gap-2">
-                        <button
-                          disabled={entryPage === 1}
-                          onClick={() =>
-                            setEntryPage((p) => Math.max(1, p - 1))
-                          }
-                          className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          ← {t("मागे", "Prev")}
-                        </button>
-                        <span className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold">
-                          {entryPage} / {totalEntryPages}
-                        </span>
-                        <button
-                          disabled={entryPage === totalEntryPages}
-                          onClick={() =>
-                            setEntryPage((p) =>
-                              Math.min(totalEntryPages, p + 1),
-                            )
-                          }
-                          className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {t("पुढे", "Next")} →
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </Card>
+        {viewingEntry && (
+          <ViewEntryModal
+            entry={viewingEntry}
+            kraOptions={kraOptions}
+            onClose={() => setViewingEntry(null)}
+          />
         )}
+      </div>
+    </div>
+  );
+}
+
+function ViewEntryModal({ entry, kraOptions, onClose }) {
+  const { t, language } = useLanguage();
+  const effectiveKraOptions =
+    Array.isArray(kraOptions) && kraOptions.length > 0
+      ? kraOptions
+      : DEFAULT_KRA_OPTIONS;
+
+  const totalTarget = sumNumberField(entry?.kras, "annualTarget");
+  const totalAchievement = sumNumberField(entry?.kras, "kraAchievement");
+  const selectedIds = getSelectedKraIds(entry);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 rounded-t-2xl flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white">
+            {t("📋 नोंद तपशील", "📋 Entry Details")}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-white hover:bg-white/20 p-2 rounded-lg transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <InfoItem
+              label={t("महामंडळ", "Corporation")}
+              value={localizeName(entry.corporation, language)}
+            />
+            <InfoItem label={t("वर्ष", "Year")} value={entry.kraYear} />
+            <InfoItem
+              label={t("प्रदेश", "Region")}
+              value={
+                localizeName(entry.region, language) || t("लागू नाही", "N/A")
+              }
+            />
+            <InfoItem
+              label={t("मंडळ", "Circle")}
+              value={
+                localizeName(entry.circle, language) || t("लागू नाही", "N/A")
+              }
+            />
+            <InfoItem
+              label={t("विभाग", "Division")}
+              value={
+                localizeName(entry.division, language) || t("लागू नाही", "N/A")
+              }
+            />
+            <InfoItem
+              label={t("संपर्क", "Contact")}
+              value={entry.contactNumber}
+            />
+          </div>
+
+          <div className="bg-indigo-50 rounded-xl p-4">
+            <h4 className="font-semibold text-indigo-800 mb-2">
+              {t("KRA तपशील", "KRA Details")}
+            </h4>
+            <p className="text-indigo-700 text-sm">
+              {t("निवडलेले KRA:", "Selected KRAs:")}{" "}
+              {selectedIds.length > 0 ? selectedIds.join(", ") : "-"}
+            </p>
+
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-indigo-800">
+                    <th className="py-2 pr-3">KRA</th>
+                    <th className="py-2 pr-3">{t("नाव", "Name")}</th>
+                    <th className="py-2 text-right">{t("लक्ष्य", "Target")}</th>
+                    <th className="py-2 text-right">
+                      {t("साध्य", "Achievement")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-indigo-100">
+                  {(Array.isArray(entry.kras) ? entry.kras : []).map((k) => {
+                    const kraOption = effectiveKraOptions.find(
+                      (o) => Number(o.id) === Number(k.kraId),
+                    );
+                    return (
+                      <tr key={`${entry._id}-${k.kraId}`}>
+                        <td className="py-2 pr-3 font-semibold text-indigo-800">
+                          KRA {k.kraId}
+                        </td>
+                        <td className="py-2 pr-3 text-indigo-700">
+                          {kraOption?.name || k.kraName || "-"}
+                        </td>
+                        <td className="py-2 text-right text-indigo-700">
+                          {(Number(k.annualTarget) || 0).toLocaleString(
+                            "en-IN",
+                          )}
+                        </td>
+                        <td className="py-2 text-right text-indigo-700">
+                          {(Number(k.kraAchievement) || 0).toLocaleString(
+                            "en-IN",
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-blue-50 rounded-xl p-4 text-center">
+              <p className="text-sm text-blue-600 mb-1">
+                {t("वार्षिक लक्ष्य", "Annual Target")}
+              </p>
+              <p className="text-2xl font-bold text-blue-700">
+                {totalTarget.toLocaleString("en-IN")}
+              </p>
+            </div>
+            <div className="bg-green-50 rounded-xl p-4 text-center">
+              <p className="text-sm text-green-600 mb-1">
+                {t("साध्य", "Achievement")}
+              </p>
+              <p className="text-2xl font-bold text-green-700">
+                {totalAchievement.toLocaleString("en-IN")}
+              </p>
+            </div>
+          </div>
+
+          <InfoItem
+            label={t("टिप्पणी", "Remarks")}
+            value={entry.remarks || t("टिप्पणी उपलब्ध नाही", "No remarks")}
+          />
+        </div>
       </div>
     </div>
   );
