@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Cell,
@@ -329,11 +329,7 @@ const toDivisionBarShortLabel = (label) => {
   if (!raw) return "-";
 
   const afterComma = raw.includes(",")
-    ? raw
-        .split(",")
-        .slice(1)
-        .join(",")
-        .trim()
+    ? raw.split(",").slice(1).join(",").trim()
     : raw;
 
   const [leftPart, rightPart] = afterComma.split(/\s-\s/, 2);
@@ -429,10 +425,8 @@ const createNonOverlappingPieLabel = ({ minGap = 14 } = {}) => {
     adjustedY = Math.max(topClamp, Math.min(bottomClamp, adjustedY));
     used.push(adjustedY);
 
-    const kraName = toCleanLabel(props?.payload?.displayKraName, "");
-    const namePart = kraName ? truncateAxisLabel(kraName, 16) : "KRA";
     const textValue = `${value.toFixed(2)}%`;
-    const labelText = `${namePart} ${textValue}`;
+    const labelText = textValue;
 
     const placement = {
       value,
@@ -573,10 +567,6 @@ export default function Dashboard() {
     needsAttention: null,
   });
   const [isComparativeLoading, setIsComparativeLoading] = useState(false);
-
-  const comparativeNonZeroCount = (comparativeData?.topPerformers || []).filter(
-    (row) => Number(row?.metricValue || 0) > 0,
-  ).length;
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -1201,6 +1191,32 @@ export default function Dashboard() {
   const orderedMonthlyTrend = sortTrendByFinancialOrder(displayMonthlyTrend);
   const monthlyTrendAxis = buildDynamicPercentageAxis(
     orderedMonthlyTrend.map((x) => x.achievementPct),
+  );
+  const cumulativeDenominatorTarget = orderedMonthlyTrend.reduce(
+    (sum, item) => sum + Math.max(0, toSafeNumber(item?.totalTarget)),
+    0,
+  );
+  let runningAchievement = 0;
+  let runningTarget = 0;
+  const cumulativeMonthlyTrend = orderedMonthlyTrend.map((item) => {
+    runningAchievement += toSafeNumber(item?.totalAchievement);
+    runningTarget += toSafeNumber(item?.totalTarget);
+    const cumulativePct =
+      cumulativeDenominatorTarget > 0
+        ? (runningAchievement / cumulativeDenominatorTarget) * 100
+        : runningTarget > 0
+          ? (runningAchievement / runningTarget) * 100
+          : 0;
+
+    return {
+      ...item,
+      cumulativeAchievementPct: capPercentage(cumulativePct),
+      cumulativeAchievement: runningAchievement,
+      cumulativeTarget: runningTarget,
+    };
+  });
+  const cumulativeMonthlyTrendAxis = buildDynamicPercentageAxis(
+    cumulativeMonthlyTrend.map((x) => x.cumulativeAchievementPct),
   );
   const displayRankTable = rankTable.map((row) => ({
     ...row,
@@ -2072,15 +2088,35 @@ export default function Dashboard() {
                 <ChartLoadingState />
               ) : monthlyTrend.length > 0 ? (
                 <ResponsiveContainer width="100%" height={350}>
-                  <LineChart
+                  <AreaChart
                     data={orderedMonthlyTrend}
                     margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <defs>
+                      <linearGradient
+                        id="monthlyTrendFill"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#2563eb"
+                          stopOpacity={0.35}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#2563eb"
+                          stopOpacity={0.06}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
                     <XAxis
                       type="category"
                       dataKey="label"
-                      tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                      tick={{ fill: "#64748b", fontSize: 11, fontWeight: 700 }}
                       axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                       tickLine={false}
                     />
@@ -2111,26 +2147,145 @@ export default function Dashboard() {
                       wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
                       formatter={() => t("साध्य टक्केवारी", "Achievement %")}
                     />
-                    <Line
+                    <Area
                       type="monotone"
                       dataKey="achievementPct"
                       name={t("साध्य टक्केवारी", "Achievement %")}
-                      stroke="#6366f1"
+                      stroke="#2563eb"
                       strokeWidth={3}
+                      fill="url(#monthlyTrendFill)"
                       dot={{
                         r: 5,
-                        fill: "#6366f1",
+                        fill: "#2563eb",
                         stroke: "#fff",
                         strokeWidth: 2,
                       }}
                       activeDot={{
                         r: 7,
                         fill: "#fff",
-                        stroke: "#6366f1",
+                        stroke: "#2563eb",
                         strokeWidth: 2,
                       }}
                     />
-                  </LineChart>
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <ChartEmptyState
+                  title={t("डेटा उपलब्ध नाही", "No trend data available")}
+                />
+              )}
+            </SectionCard>
+
+            {/* ═══════ CUMULATIVE MONTHLY TREND LINE CHART ═══════ */}
+            <SectionCard>
+              <div className="flex items-center gap-3 mb-5">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white flex items-center justify-center text-lg shadow-md">
+                  📉
+                </span>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-800">
+                    {t(
+                      "संचयी महिनानिहाय KRA कल",
+                      "Cumulative Month Wise KRA Trends",
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {t(
+                      "महिन्यानुसार संचयी साध्य टक्केवारी",
+                      "Cumulative month-wise achievement percentage",
+                    )}
+                  </p>
+                </div>
+              </div>
+              {isLoading ? (
+                <ChartLoadingState />
+              ) : cumulativeMonthlyTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height={350}>
+                  <AreaChart
+                    data={cumulativeMonthlyTrend}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient
+                        id="cumulativeTrendFill"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#16a34a"
+                          stopOpacity={0.35}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#16a34a"
+                          stopOpacity={0.06}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                    <XAxis
+                      type="category"
+                      dataKey="label"
+                      tick={{ fill: "#64748b", fontSize: 11, fontWeight: 700 }}
+                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="number"
+                      domain={[0, cumulativeMonthlyTrendAxis.max]}
+                      ticks={cumulativeMonthlyTrendAxis.ticks}
+                      allowDecimals={false}
+                      tickFormatter={(v) => formatDisplayPercentage(v, 0)}
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      axisLine={{ stroke: "#000000", strokeWidth: 3 }}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: "12px",
+                        border: "none",
+                        boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
+                        fontSize: 13,
+                      }}
+                      formatter={(v) => [
+                        formatDisplayPercentage(v, 2),
+                        t("संचयी साध्य टक्केवारी", "Cumulative Achievement %"),
+                      ]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: 12, fontWeight: 600 }}
+                      formatter={() =>
+                        t("संचयी साध्य टक्केवारी", "Cumulative Achievement %")
+                      }
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="cumulativeAchievementPct"
+                      name={t(
+                        "संचयी साध्य टक्केवारी",
+                        "Cumulative Achievement %",
+                      )}
+                      stroke="#16a34a"
+                      strokeWidth={3}
+                      fill="url(#cumulativeTrendFill)"
+                      dot={{
+                        r: 5,
+                        fill: "#16a34a",
+                        stroke: "#fff",
+                        strokeWidth: 2,
+                      }}
+                      activeDot={{
+                        r: 7,
+                        fill: "#fff",
+                        stroke: "#16a34a",
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
               ) : (
                 <ChartEmptyState
@@ -2282,13 +2437,10 @@ export default function Dashboard() {
                         key={corp.corporationId || corpIdx}
                         className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm hover:shadow-md transition-all duration-300"
                       >
-                        <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="mb-3">
                           <h4 className="text-sm md:text-base font-extrabold text-slate-700 truncate">
                             {corp.corporationName}
                           </h4>
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-slate-200/70 px-2 py-1 rounded-full">
-                            {t("वेटेड योगदान", "Weighted Contribution")}
-                          </span>
                         </div>
 
                         <div className="rounded-xl bg-white border border-slate-100 p-2">
@@ -2338,10 +2490,7 @@ export default function Dashboard() {
                                   );
                                   return [
                                     formatDisplayPercentage(contribution, 2),
-                                    t(
-                                      "वेटेड योगदान टक्केवारी",
-                                      "Weighted Contribution Percentage",
-                                    ),
+                                    t("टक्केवारी", "Percentage"),
                                   ];
                                 }}
                                 labelFormatter={(label) =>
@@ -2379,11 +2528,7 @@ export default function Dashboard() {
                                     {slice?.displayKraName || "-"}
                                   </p>
                                   <p className="text-[11px] font-bold text-slate-500 mt-0.5">
-                                    {t(
-                                      "वेटेड योगदान टक्केवारी",
-                                      "Weighted Contribution Percentage",
-                                    )}
-                                    :{" "}
+                                    {t("टक्केवारी", "Percentage")}:{" "}
                                     {formatDisplayPercentage(
                                       slice?.displaySlicePercentage,
                                       2,
@@ -2593,16 +2738,6 @@ export default function Dashboard() {
                   />
                 ) : (
                   <div className="space-y-3">
-                    {comparativeNonZeroCount <
-                      (comparativeData?.topPerformers || []).length && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                        {t(
-                          "निवडलेल्या कालावधीत काही महामंडळांची नोंद ० आहे. अधिक संपूर्ण तुलना पाहण्यासाठी Year निवडा.",
-                          "Some entities are 0 in the selected window. Choose Year for a fuller comparison.",
-                        )}
-                      </div>
-                    )}
-
                     <ResponsiveContainer
                       width="100%"
                       height={comparativeChartHeight}
