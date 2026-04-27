@@ -324,6 +324,38 @@ const truncateAxisLabel = (label, maxLen = 24) => {
   return `${text.slice(0, maxLen - 1)}…`;
 };
 
+const toDivisionBarShortLabel = (label) => {
+  const raw = String(label || "").trim();
+  if (!raw) return "-";
+
+  const afterComma = raw.includes(",")
+    ? raw
+        .split(",")
+        .slice(1)
+        .join(",")
+        .trim()
+    : raw;
+
+  const [leftPart, rightPart] = afterComma.split(/\s-\s/, 2);
+  const divisionPart = String(leftPart || "").trim();
+  const placePart = String(rightPart || "")
+    .replace(/\(.*?\)/g, "")
+    .trim();
+
+  const acronym = divisionPart
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      const first = Array.from(word)[0];
+      return first ? first.toUpperCase() : "";
+    })
+    .join("");
+
+  if (!acronym) return raw;
+  return placePart ? `${acronym} ${placePart}` : acronym;
+};
+
 const toDevanagariDigits = (value) =>
   String(value || "").replace(/\d/g, (digit) => "०१२३४५६७८९"[Number(digit)]);
 
@@ -1156,6 +1188,9 @@ export default function Dashboard() {
     ...item,
     achievementPercentage: capPercentage(item?.achievementPercentage),
   }));
+  const isDivisionGroupedBar = getGroupByForSelection() === "division";
+  const formatBarChartEntityName = (name) =>
+    isDivisionGroupedBar ? toDivisionBarShortLabel(name) : name;
   const bottomPerformerAxis = buildDynamicPercentageAxis(
     displayBottomBars.map((x) => x.achievementPercentage),
   );
@@ -1230,6 +1265,13 @@ export default function Dashboard() {
   const isComparativePercentMetric =
     comparativeFilters.metric === "completionPercentage" ||
     comparativeFilters.metric === "efficiencyScore";
+  const isComparativeDivisionLevel = comparativeFilters.level === "division";
+  const formatComparativeBarEntityName = (name) => {
+    if (isComparativeDivisionLevel) {
+      return toDivisionBarShortLabel(name);
+    }
+    return truncateAxisLabel(name, 26);
+  };
   const comparativeRows = (comparativeData?.topPerformers || []).map((row) => ({
     ...row,
     metricValue: isComparativePercentMetric
@@ -1544,6 +1586,7 @@ export default function Dashboard() {
                       <XAxis
                         dataKey="name"
                         interval={0}
+                        tickFormatter={formatBarChartEntityName}
                         tick={{
                           fill: "#64748b",
                           fontSize: 11,
@@ -1568,6 +1611,7 @@ export default function Dashboard() {
                           boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
                           fontSize: 13,
                         }}
+                        labelFormatter={formatBarChartEntityName}
                         formatter={(v) => [
                           formatDisplayPercentage(v, 2),
                           t("साध्य %", "Achievement %"),
@@ -1676,6 +1720,7 @@ export default function Dashboard() {
                       <XAxis
                         dataKey="name"
                         interval={0}
+                        tickFormatter={formatBarChartEntityName}
                         tick={{
                           fill: "#64748b",
                           fontSize: 11,
@@ -1700,6 +1745,7 @@ export default function Dashboard() {
                           boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
                           fontSize: 13,
                         }}
+                        labelFormatter={formatBarChartEntityName}
                         formatter={(v) => [
                           formatDisplayPercentage(v, 2),
                           t("साध्य %", "Achievement %"),
@@ -2590,9 +2636,7 @@ export default function Dashboard() {
                             fontSize: 12,
                             fontWeight: 700,
                           }}
-                          tickFormatter={(value) =>
-                            truncateAxisLabel(value, 26)
-                          }
+                          tickFormatter={formatComparativeBarEntityName}
                           axisLine={{ stroke: "#000000", strokeWidth: 3 }}
                           tickLine={false}
                         />
@@ -2610,7 +2654,7 @@ export default function Dashboard() {
                             ),
                             t("मेट्रिक मूल्य", "Metric Value"),
                           ]}
-                          labelFormatter={(label) => String(label || "")}
+                          labelFormatter={formatComparativeBarEntityName}
                         />
                         <Bar dataKey="metricValue" radius={[0, 8, 8, 0]}>
                           <LabelList
