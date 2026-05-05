@@ -24,6 +24,33 @@ const getSelectedKraIds = (entry) => {
     .filter((v) => Number.isFinite(Number(v)));
 };
 
+const buildKraRemarkMap = (remarksText) => {
+  const map = new Map();
+  const lines = String(remarksText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  lines.forEach((line) => {
+    const numbered = line.match(/^(\d+)\.\s.*?:\s*(.+)$/);
+    if (numbered) {
+      const kraId = Number(numbered[1]);
+      const remark = String(numbered[2] || "").trim();
+      if (Number.isFinite(kraId) && remark) map.set(kraId, remark);
+      return;
+    }
+
+    const kraPrefix = line.match(/^KRA\s*(\d+)\s*[:-]\s*(.+)$/i);
+    if (kraPrefix) {
+      const kraId = Number(kraPrefix[1]);
+      const remark = String(kraPrefix[2] || "").trim();
+      if (Number.isFinite(kraId) && remark) map.set(kraId, remark);
+    }
+  });
+
+  return map;
+};
+
 // ==========================================
 // CONSTANTS
 // ==========================================
@@ -37,7 +64,6 @@ const SIDEBAR_ITEMS = [
     labelMr: "आर्थिक वर्षे",
     icon: "📅",
   },
-  { id: "settings", label: "Settings", labelMr: "सेटिंग्ज", icon: "⚙️" },
 ];
 
 const MONTHS_MARATHI = {
@@ -630,13 +656,6 @@ export default function AdminPanel() {
           )}
           {activeSection === "years" && (
             <YearsSection setError={setError} setSuccess={setSuccess} />
-          )}
-          {activeSection === "settings" && (
-            <SettingsSection
-              isSuperAdmin={isSuperAdmin}
-              setError={setError}
-              setSuccess={setSuccess}
-            />
           )}
         </div>
       </main>
@@ -1598,6 +1617,7 @@ function ViewEntryModal({ entry, kraOptions, onClose }) {
   const totalTarget = sumNumberField(entry?.kras, "annualTarget");
   const totalAchievement = sumNumberField(entry?.kras, "kraAchievement");
   const selectedIds = getSelectedKraIds(entry);
+  const kraRemarkMap = buildKraRemarkMap(entry?.remarks);
 
   return (
     <div
@@ -1660,42 +1680,58 @@ function ViewEntryModal({ entry, kraOptions, onClose }) {
 
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-indigo-800">
-                    <th className="py-2 pr-3">KRA</th>
-                    <th className="py-2 pr-3">{t("नाव", "Name")}</th>
-                    <th className="py-2 text-right">{t("लक्ष्य", "Target")}</th>
-                    <th className="py-2 text-right">
+                <thead className="bg-indigo-900 text-white">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Sr.</th>
+                    <th className="px-3 py-2 text-left">{t("KRA", "KRA")}</th>
+                    <th className="px-3 py-2 text-left">{t("नाव", "Name")}</th>
+                    <th className="px-3 py-2 text-right">
+                      {t("लक्ष्य", "Target")}
+                    </th>
+                    <th className="px-3 py-2 text-right">
                       {t("साध्य", "Achievement")}
+                    </th>
+                    <th className="px-3 py-2 text-left">
+                      {t("टिप्पणी / अडचणी", "Remarks / Issues")}
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-indigo-100">
-                  {(Array.isArray(entry.kras) ? entry.kras : []).map((k) => {
-                    const kraOption = effectiveKraOptions.find(
-                      (o) => o.id === k.kraId,
-                    );
-                    const displayName = kraOption
-                      ? localizeName(kraOption, language)
-                      : k.kraName;
+                  {(Array.isArray(entry.kras) ? entry.kras : []).map(
+                    (k, idx) => {
+                      const kraOption = effectiveKraOptions.find(
+                        (o) => o.id === k.kraId,
+                      );
+                      const displayName = kraOption
+                        ? localizeName(kraOption, language)
+                        : k.kraName;
+                      const kraRemark =
+                        kraRemarkMap.get(Number(k.kraId)) || "-";
 
-                    return (
-                      <tr key={k.kraId}>
-                        <td className="py-2 pr-3 font-semibold text-indigo-800">
-                          KRA {k.kraId}
-                        </td>
-                        <td className="py-2 pr-3 text-indigo-700">
-                          {displayName}
-                        </td>
-                        <td className="py-2 text-right text-indigo-700">
-                          {(Number(k.annualTarget) || 0).toLocaleString()}
-                        </td>
-                        <td className="py-2 text-right text-indigo-700">
-                          {(Number(k.kraAchievement) || 0).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      return (
+                        <tr key={k.kraId}>
+                          <td className="px-3 py-2 text-slate-700">
+                            {idx + 1}
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-indigo-800">
+                            KRA {k.kraId}
+                          </td>
+                          <td className="px-3 py-2 text-indigo-700">
+                            {displayName}
+                          </td>
+                          <td className="px-3 py-2 text-right text-indigo-700">
+                            {(Number(k.annualTarget) || 0).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-right text-indigo-700">
+                            {(Number(k.kraAchievement) || 0).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {kraRemark}
+                          </td>
+                        </tr>
+                      );
+                    },
+                  )}
                 </tbody>
               </table>
             </div>
